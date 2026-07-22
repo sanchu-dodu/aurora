@@ -1,0 +1,31 @@
+{
+  "name": "aurora-cli",
+  "version": "0.1.0",
+  "description": "Aurora Command Line Interface",
+  "type": "module",
+  "bin": {
+    "aurora": "./dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "aurora",
+    "cli"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.6.2",
+    "commander": "^15.0.0",
+    "fs-extra": "^11.3.6",
+    "ora": "^9.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsx": "^4.23.1",
+    "typescript": "^5.9.2"
+  }
+}
