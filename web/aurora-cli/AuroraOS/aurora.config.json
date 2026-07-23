@@ -1,0 +1,6 @@
+{
+  "projectName": "AuroraOS",
+  "framework": "Next.js",
+  "language": "TypeScript",
+  "packageManager": "npm"
+}
