@@ -29,8 +29,18 @@ export async function initCommand(): Promise<void> {
   console.log(`Language        : ${config.language}`);
   console.log(`Package Manager : ${config.packageManager}`);
 
-  await createProject(config);
+  try {
+    await createProject(config);
 
-  console.log("");
-  console.log("🎉 Aurora project initialized successfully.");
+    console.log("");
+    console.log("🎉 Aurora project initialized successfully.");
+  } catch (error) {
+    console.log("");
+
+    if (error instanceof Error) {
+      console.error("❌ " + error.message);
+    } else {
+      console.error("❌ Unknown error occurred.");
+    }
+  }
 }

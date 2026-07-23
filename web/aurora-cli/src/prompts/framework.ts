@@ -6,19 +6,7 @@ export async function askFramework(): Promise<string> {
     choices: [
       {
         name: "Next.js",
-        value: "Next.js",
-      },
-      {
-        name: "React",
-        value: "React",
-      },
-      {
-        name: "Vue",
-        value: "Vue",
-      },
-      {
-        name: "Svelte",
-        value: "Svelte",
+        value: "nextjs",
       },
     ],
   });

@@ -1,0 +1,6 @@
+{
+  "projectName": "AuroraValidation",
+  "framework": "nextjs",
+  "language": "TypeScript",
+  "packageManager": "npm"
+}

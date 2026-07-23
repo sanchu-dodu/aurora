@@ -1,0 +1,13 @@
+{
+  "name": "nextjs",
+  "displayName": "Next.js",
+  "description": "Official Next.js template for Aurora CLI",
+  "framework": "nextjs",
+  "language": [
+    "typescript"
+  ],
+  "packageManagers": [
+    "npm"
+  ],
+  "version": "1.0.0"
+}

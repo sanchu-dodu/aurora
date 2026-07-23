@@ -1,24 +1,22 @@
 import type { ProjectConfig } from "../types/project.js";
 
+const templates: Record<string, string> = {
+  nextjs: "nextjs",
+  react: "react",
+  vue: "vue",
+  svelte: "svelte",
+};
+
 export function getTemplateDirectory(
   config: ProjectConfig
 ): string {
-  switch (config.framework.toLowerCase()) {
-    case "next.js":
-      return "nextjs";
+  const template = templates[config.framework.toLowerCase()];
 
-    case "react":
-      return "react";
-
-    case "vue":
-      return "vue";
-
-    case "svelte":
-      return "svelte";
-
-    default:
-      throw new Error(
-        `Unsupported framework: ${config.framework}`
-      );
+  if (!template) {
+    throw new Error(
+      `Unsupported framework: ${config.framework}`
+    );
   }
+
+  return template;
 }
