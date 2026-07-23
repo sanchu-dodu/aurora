@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { showBanner } from "./utils/banner.js";
+import { initCommand } from "./commands/init.js";
 
 const program = new Command();
 
@@ -12,5 +13,12 @@ program.action(() => {
   showBanner();
   console.log("✅ Aurora CLI started successfully.");
 });
+
+program
+  .command("init")
+  .description("Initialize a new Aurora project")
+  .action(async () => {
+    await initCommand();
+  });
 
 program.parse(process.argv);
