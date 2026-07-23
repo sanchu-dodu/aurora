@@ -3,6 +3,7 @@ import path from "path";
 
 import { createProjectStructure } from "./filesystem.js";
 import { createPackageJson } from "./package.js";
+import { createTsConfig } from "./tsconfig.js";
 
 import type { ProjectConfig } from "../types/project.js";
 
@@ -14,11 +15,14 @@ export async function createProject(
   // Create the project directory
   await fs.ensureDir(projectPath);
 
-  // Create the folder structure
+  // Create folder structure
   await createProjectStructure(projectPath);
 
   // Create package.json
   await createPackageJson(projectPath, config);
+
+  // Create tsconfig.json
+  await createTsConfig(projectPath);
 
   // Create aurora.config.json
   await fs.writeJson(

@@ -1,0 +1,6 @@
+{
+  "projectName": "AuroraCore",
+  "framework": "Next.js",
+  "language": "TypeScript",
+  "packageManager": "npm"
+}
