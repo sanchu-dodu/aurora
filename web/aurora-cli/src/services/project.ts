@@ -4,6 +4,7 @@ import path from "path";
 import { createProjectStructure } from "./filesystem.js";
 import { createPackageJson } from "./package.js";
 import { createTsConfig } from "./tsconfig.js";
+import { createReadme } from "./template.js";
 
 import type { ProjectConfig } from "../types/project.js";
 
@@ -23,6 +24,9 @@ export async function createProject(
 
   // Create tsconfig.json
   await createTsConfig(projectPath);
+
+  // Create README.md
+  await createReadme(projectPath, config);
 
   // Create aurora.config.json
   await fs.writeJson(
