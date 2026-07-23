@@ -5,6 +5,7 @@ import { createProjectStructure } from "./filesystem.js";
 import { createPackageJson } from "./package.js";
 import { createTsConfig } from "./tsconfig.js";
 import { createReadme } from "./template.js";
+import { copyTemplate } from "./templateEngine.js";
 
 import type { ProjectConfig } from "../types/project.js";
 
@@ -18,6 +19,9 @@ export async function createProject(
 
   // Create folder structure
   await createProjectStructure(projectPath);
+  
+  // Copy template files
+await copyTemplate(projectPath, config);
 
   // Create package.json
   await createPackageJson(projectPath, config);
