@@ -1,11 +1,13 @@
 import fs from "fs/promises";
 import path from "path";
 import { ConfigContext } from "./configContext.js";
+import { EnvContext } from "./envContext.js";
 
 
 export class InstallerContext {
 
   config: ConfigContext;
+  env: EnvContext;
 
 
   constructor(
@@ -14,6 +16,12 @@ export class InstallerContext {
 
     this.config =
       new ConfigContext(
+        projectPath
+      );
+
+
+    this.env =
+      new EnvContext(
         projectPath
       );
 
@@ -35,7 +43,6 @@ export class InstallerContext {
     filePath: string,
     content: string
   ): Promise<void> {
-
 
     const fullPath =
       path.join(
