@@ -1,11 +1,24 @@
 import fs from "fs/promises";
 import path from "path";
+import { ConfigContext } from "./configContext.js";
+
 
 export class InstallerContext {
 
+  config: ConfigContext;
+
+
   constructor(
     private projectPath: string
-  ) {}
+  ) {
+
+    this.config =
+      new ConfigContext(
+        projectPath
+      );
+
+  }
+
 
   log(
     message: string
@@ -22,6 +35,7 @@ export class InstallerContext {
     filePath: string,
     content: string
   ): Promise<void> {
+
 
     const fullPath =
       path.join(
