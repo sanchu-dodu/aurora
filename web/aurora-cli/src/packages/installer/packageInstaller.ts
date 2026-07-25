@@ -1,7 +1,7 @@
 import { resolveDependencies } from "../dependencyResolver.js";
 import { loadInstaller } from "./installerLoader.js";
 import { InstallerContext } from "./installerContext.js";
-
+import { loadHooks } from "./hookLoader.js";
 
 export class PackageInstaller {
 
@@ -42,7 +42,15 @@ export class PackageInstaller {
       console.log(
         `Installing ${pkg}...`
       );
+const hooks =
+ await loadHooks(pkg);
 
+
+if(hooks?.beforeInstall){
+
+ await hooks.beforeInstall(context);
+
+}
 
       const installer =
         await loadInstaller(
@@ -68,7 +76,11 @@ export class PackageInstaller {
 
       }
 
+if(hooks?.afterInstall){
 
+ await hooks.afterInstall(context);
+
+}
       console.log(
         "✔ Complete"
       );
