@@ -1,0 +1,15 @@
+{
+  "id": "auth",
+  "name": "Authentication",
+  "version": "1.0.0",
+  "description": "Authentication package.",
+  "author": "Aurora",
+  "homepage": "https://aurora.dev",
+  "frameworks": [
+    "nextjs"
+  ],
+  "dependencies": [
+    "database",
+    "env"
+  ]
+}

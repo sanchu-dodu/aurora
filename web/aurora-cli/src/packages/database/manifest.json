@@ -1,0 +1,10 @@
+{
+  "id": "database",
+  "name": "Database",
+  "version": "1.0.0",
+  "description": "Database support.",
+  "frameworks": [
+    "nextjs"
+  ],
+  "dependencies": []
+}

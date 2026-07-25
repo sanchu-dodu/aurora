@@ -41,11 +41,17 @@ yarn-error.log*
 next-env.d.ts
 node_modules/
 dist/
-
+# Ignore generated Aurora projects
 Aurora*/
 aurora-*/
+
+# Keep the actual Aurora CLI repository
+!aurora-cli/
+!aurora-cli/**
+
 my-blog/
 
 .aurora/
+
 
 *.log

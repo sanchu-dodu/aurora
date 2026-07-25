@@ -1,0 +1,8 @@
+{
+  "id": "component",
+  "name": "React Component",
+  "framework": "react",
+  "extension": ".tsx",
+  "template": "component.tsx.template",
+  "output": "src/components"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "env",
+  "name": "Environment",
+  "version": "1.0.0",
+  "description": "Environment variables.",
+  "frameworks": [
+    "nextjs"
+  ],
+  "dependencies": []
+}
