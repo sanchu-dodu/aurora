@@ -1,13 +1,23 @@
 {
-  "name": "nextjs",
+  "id": "nextjs",
+  "name": "Aurora Next.js Starter",
   "displayName": "Next.js",
-  "description": "Official Next.js template for Aurora CLI",
+  "version": "1.0.0",
+  "description": "Production-ready Next.js TypeScript starter template for Aurora CLI",
+  "author": "Aurora",
   "framework": "nextjs",
   "language": [
     "typescript"
   ],
   "packageManagers": [
-    "npm"
+    "npm",
+    "pnpm",
+    "yarn"
   ],
-  "version": "1.0.0"
+  "tags": [
+    "frontend",
+    "react",
+    "nextjs",
+    "typescript"
+  ]
 }

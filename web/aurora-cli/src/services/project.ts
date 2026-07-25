@@ -6,6 +6,8 @@ import { createPackageJson } from "./package.js";
 import { createTsConfig } from "./tsconfig.js";
 import { createReadme } from "./template.js";
 import { copyTemplate } from "./templateEngine.js";
+import { installDependencies } from "./installer.js";
+import { initializeGit } from "./git.js";
 
 import type { ProjectConfig } from "../types/project.js";
 
@@ -32,7 +34,7 @@ await copyTemplate(projectPath, config);
   // Create README.md
   await createReadme(projectPath, config);
 
-  // Create aurora.config.json
+    // Create aurora.config.json
   await fs.writeJson(
     path.join(projectPath, "aurora.config.json"),
     config,
@@ -40,6 +42,17 @@ await copyTemplate(projectPath, config);
       spaces: 2,
     }
   );
+
+  if (config.installDependencies) {
+    await installDependencies(
+      projectPath,
+      config.packageManager
+    );
+  }
+
+  if (config.initializeGit) {
+    await initializeGit(projectPath);
+  }
 
   console.log("");
   console.log(`✅ Project created at: ${projectPath}`);

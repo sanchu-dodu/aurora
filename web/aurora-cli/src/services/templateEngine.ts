@@ -7,6 +7,8 @@ import { getTemplateDirectory } from "../engine/registry.js";
 import { replaceVariables } from "../engine/variables.js";
 import { walkDirectory } from "./walker.js";
 import { loadTemplateManifest } from "./manifest.js";
+import { shouldGenerateFile } from "../engine/filter.js";
+import { validateTemplate } from "../engine/templateValidator.js";
 
 export async function copyTemplate(
   projectPath: string,
@@ -48,12 +50,26 @@ export async function copyTemplate(
     "templates",
     templateDirectory
   );
+await validateTemplate(templatePath);
 
   const files = await walkDirectory(templatePath);
 
   for (const source of files) {
     const relativePath = path.relative(templatePath, source);
-    const destination = path.join(projectPath, relativePath);
+
+if (!shouldGenerateFile(relativePath, config)) {
+  continue;
+}
+
+const processedRelativePath = replaceVariables(
+  relativePath,
+  config
+);
+
+const destination = path.join(
+  projectPath,
+  processedRelativePath
+);
 
     await fs.ensureDir(path.dirname(destination));
 

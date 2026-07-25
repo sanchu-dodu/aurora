@@ -5,6 +5,7 @@ export function replaceVariables(
   config: ProjectConfig
 ): string {
   return content
+    .replace(/{{projectName}}/g, config.projectName)
     .replace(/PROJECT_NAME_PLACEHOLDER/g, config.projectName)
     .replace(/{{FRAMEWORK}}/g, config.framework)
     .replace(/{{LANGUAGE}}/g, config.language)

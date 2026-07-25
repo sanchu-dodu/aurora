@@ -1,6 +1,30 @@
 import { Command } from "commander";
+
 import { showBanner } from "./utils/banner.js";
-import { initCommand } from "./commands/init.js";
+
+import "./commands/initRegistration.js";
+import "./commands/doctorRegistration.js";
+import "./commands/listRegistration.js";
+import "./commands/pluginRegistration.js";
+import "./commands/configRegistration.js";
+import "./commands/templateRegistration.js";
+import "./features/modules/authFeature.js";
+import "./commands/featureRegistration.js";
+import "./commands/generateRegistration.js";
+import "./hooks/defaultHooks.js";
+import "./templates/registerNext.js";
+import {
+  registerGenerator,
+} from "./generator/registry/generatorRegistry.js";
+import {
+  discoverPackages,
+} from "./packages/discovery/packageDiscovery.js";
+import "./commands/packageRegistration.js";
+
+import { discoverPlugins } from "./discovery/pluginDiscovery.js";
+
+import { registerAllCommands } from "./core/commandRegistry.js";
+import { initializePlugins } from "./core/pluginLoader.js";
 
 const program = new Command();
 
@@ -14,11 +38,20 @@ program.action(() => {
   console.log("✅ Aurora CLI started successfully.");
 });
 
-program
-  .command("init")
-  .description("Initialize a new Aurora project")
-  .action(async () => {
-    await initCommand();
-  });
+registerAllCommands(program);
 
+// Automatically discover and load plugins
+await discoverPlugins();
+
+// Initialize discovered plugins
+await initializePlugins();
+import {
+  discoverTemplates,
+} from "./templates/registry/templateRegistry.js";
+await discoverTemplates();
+await discoverPackages();
+registerAllGenerators();
+import {
+  registerAllGenerators,
+} from "./generator/registry/registerGenerators.js";
 program.parse(process.argv);

@@ -3,4 +3,7 @@ export interface ProjectConfig {
   framework: string;
   language: string;
   packageManager: string;
+
+  installDependencies: boolean;
+  initializeGit: boolean;
 }
