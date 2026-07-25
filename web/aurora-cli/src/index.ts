@@ -13,6 +13,7 @@ import "./commands/featureRegistration.js";
 import "./commands/generateRegistration.js";
 import "./hooks/defaultHooks.js";
 import "./templates/registerNext.js";
+import { discoverManifests } from "./packages/discovery/discoverManifests.js";
 import {
   registerGenerator,
 } from "./generator/registry/generatorRegistry.js";
@@ -54,4 +55,5 @@ registerAllGenerators();
 import {
   registerAllGenerators,
 } from "./generator/registry/registerGenerators.js";
+await discoverManifests();
 program.parse(process.argv);
