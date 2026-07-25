@@ -3,6 +3,8 @@
   "name": "Authentication",
   "version": "1.0.0",
   "description": "Authentication package.",
+  "author": "Aurora",
+  "homepage": "https://aurora.dev",
   "frameworks": [
     "nextjs"
   ],
@@ -13,5 +15,8 @@
   "env": [
     "AUTH_SECRET",
     "AUTH_URL"
-  ]
+  ],
+  "aurora": {
+    "minimumVersion": "0.1.0"
+  }
 }

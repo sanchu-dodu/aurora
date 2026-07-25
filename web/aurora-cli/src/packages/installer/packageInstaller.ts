@@ -2,6 +2,7 @@ import { resolveDependencies } from "../dependencyResolver.js";
 import { loadInstaller } from "./installerLoader.js";
 import { InstallerContext } from "./installerContext.js";
 import { loadHooks } from "./hookLoader.js";
+import { validatePackage } from "../packageValidator.js";
 
 export class PackageInstaller {
 
@@ -52,6 +53,20 @@ if(hooks?.beforeInstall){
 
 }
 
+const manifest =
+ await import(
+  `../../packages/${pkg}/manifest.json`,
+  {
+    with:{
+      type:"json"
+    }
+  }
+ );
+
+
+validatePackage(
+ manifest.default
+);
       const installer =
         await loadInstaller(
           pkg
