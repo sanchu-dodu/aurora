@@ -1,1 +1,0 @@
-{"version":3,"file":"commandRegistry.js","sourceRoot":"","sources":["../../src/core/commandRegistry.ts"],"names":[],"mappings":"AAMA,MAAM,QAAQ,GAAoB,EAAE,CAAC;AAErC,MAAM,UAAU,eAAe,CAC7B,OAAsB;IAEtB,QAAQ,CAAC,IAAI,CAAC,OAAO,CAAC,CAAC;AACzB,CAAC;AAED,MAAM,UAAU,mBAAmB,CACjC,OAAgB;IAEhB,KAAK,MAAM,OAAO,IAAI,QAAQ,EAAE,CAAC;QAC/B,OAAO,CAAC,QAAQ,CAAC,OAAO,CAAC,CAAC;IAC5B,CAAC;AACH,CAAC"}

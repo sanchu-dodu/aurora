@@ -1,1 +1,0 @@
-{"version":3,"file":"projectName.js","sourceRoot":"","sources":["../../src/prompts/projectName.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,KAAK,EAAE,MAAM,mBAAmB,CAAC;AAE1C,MAAM,CAAC,KAAK,UAAU,cAAc;IAClC,MAAM,IAAI,GAAG,MAAM,KAAK,CAAC;QACvB,OAAO,EAAE,4BAA4B;QACrC,OAAO,EAAE,eAAe;KACzB,CAAC,CAAC;IAEH,OAAO,IAAI,CAAC;AACd,CAAC"}

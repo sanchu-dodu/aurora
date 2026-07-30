@@ -1,1 +1,0 @@
-{"version":3,"file":"helloPlugin.js","sourceRoot":"","sources":["../../src/plugins/helloPlugin.ts"],"names":[],"mappings":"AAAA,OAAO,EACL,cAAc,GACf,MAAM,2BAA2B,CAAC;AAEnC,cAAc,CAAC;IACb,EAAE,EAAE,OAAO;IAEX,IAAI,EAAE,cAAc;IAEpB,OAAO,EAAE,OAAO;IAEhB,KAAK,CAAC,UAAU;QACd,OAAO,CAAC,GAAG,CAAC,wBAAwB,CAAC,CAAC;IACxC,CAAC;CACF,CAAC,CAAC"}

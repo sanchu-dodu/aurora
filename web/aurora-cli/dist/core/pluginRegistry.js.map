@@ -1,1 +1,0 @@
-{"version":3,"file":"pluginRegistry.js","sourceRoot":"","sources":["../../src/core/pluginRegistry.ts"],"names":[],"mappings":"AAQA,MAAM,OAAO,GAAmB,EAAE,CAAC;AAEnC,MAAM,UAAU,cAAc,CAC5B,MAAoB;IAEpB,OAAO,CAAC,IAAI,CAAC,MAAM,CAAC,CAAC;AACvB,CAAC;AAED,MAAM,UAAU,UAAU;IACxB,OAAO,OAAO,CAAC;AACjB,CAAC"}

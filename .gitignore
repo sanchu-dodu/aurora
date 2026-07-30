@@ -1,22 +1,22 @@
 # Dependencies
 node_modules/
+**/node_modules/
 
-# Builds
+# Build output
 dist/
-build/
-.next/
+**/dist/
 
-# TypeScript
-*.tsbuildinfo
+# Next.js
+.next/
+**/.next/
 
 # Environment
 .env
 .env.local
-.env.*.local
 
-# Python
+# Python cache
 __pycache__/
-*.py[cod]
+*.pyc
 
 # Logs
 *.log

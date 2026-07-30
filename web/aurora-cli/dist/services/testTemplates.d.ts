@@ -1,1 +1,0 @@
-import "../templates/registerNext.js";

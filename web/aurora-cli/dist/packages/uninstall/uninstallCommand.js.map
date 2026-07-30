@@ -1,1 +1,0 @@
-{"version":3,"file":"uninstallCommand.js","sourceRoot":"","sources":["../../../src/packages/uninstall/uninstallCommand.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,gBAAgB,EAAE,MAAM,uBAAuB,CAAC;AAEzD,MAAM,CAAC,KAAK,UAAU,gBAAgB,CACpC,SAAiB;IAGjB,MAAM,OAAO,GACX,IAAI,gBAAgB,EAAE,CAAC;IAEzB,MAAM,OAAO,CAAC,SAAS,CACrB,SAAS,EACT,OAAO,CAAC,GAAG,EAAE,CACd,CAAC;AAEJ,CAAC"}

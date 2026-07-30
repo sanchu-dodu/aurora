@@ -1,1 +1,0 @@
-{"version":3,"file":"installCommand.js","sourceRoot":"","sources":["../../src/packages/installCommand.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,gBAAgB,EAAE,MAAM,iCAAiC,CAAC;AAEnE,MAAM,CAAC,KAAK,UAAU,cAAc,CAClC,SAAiB;IAGjB,MAAM,SAAS,GACb,IAAI,gBAAgB,EAAE,CAAC;IAEzB,MAAM,SAAS,CAAC,OAAO,CACrB,SAAS,CACV,CAAC;AAEJ,CAAC"}

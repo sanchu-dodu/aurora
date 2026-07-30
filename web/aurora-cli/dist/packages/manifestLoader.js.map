@@ -1,1 +1,0 @@
-{"version":3,"file":"manifestLoader.js","sourceRoot":"","sources":["../../src/packages/manifestLoader.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,MAAM,UAAU,CAAC;AAI1B,MAAM,CAAC,KAAK,UAAU,YAAY,CAChC,IAAY;IAGZ,MAAM,OAAO,GACX,MAAM,EAAE,CAAC,QAAQ,CACf,IAAI,EACJ,MAAM,CACP,CAAC;IAEJ,OAAO,IAAI,CAAC,KAAK,CACf,OAAO,CACW,CAAC;AAEvB,CAAC"}
