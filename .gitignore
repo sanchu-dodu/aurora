@@ -1,24 +1,21 @@
-# Dependencies
+# Node dependencies
 node_modules/
 
-# Build output
+# Next.js
 .next/
-dist/
-build/
 
 # Environment variables
 .env
 .env.local
+.env.*.local
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Build outputs
+dist/
+build/
 
 # Logs
-npm-debug.log*
-yarn-debug.log*
-pnpm-debug.log*
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
+*.log
