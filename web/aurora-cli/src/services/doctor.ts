@@ -31,9 +31,11 @@ console.log("========================");
   for (const checkItem of checks) {
     const ok = await check(checkItem.command);
 
-    console.log(
-      `${ok ? "✅" : "❌"} ${checkItem.name}`
-    );
+    if (ok) {
+  logger.success(`✅ ${checkItem.name}`);
+} else {
+  logger.error(`❌ ${checkItem.name}`);
+}
   }
 
   console.log("");

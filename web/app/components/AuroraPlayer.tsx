@@ -31,18 +31,37 @@ export default function AuroraPlayer({
 
     const interval = setInterval(() => {
       const current = player.getCurrentTime();
+      const total = player.getDuration();
 
       setProgress(current);
-      setDuration(player.getDuration());
+      setDuration(total);
 
-      localStorage.setItem(
-        `aurora-progress-${videoKey}`,
-        current.toString()
-      );
+      if (total > 0) {
+        const saved = JSON.parse(
+          localStorage.getItem("aurora-progress") || "[]"
+        );
+
+        const filtered = saved.filter(
+          (item: any) => item.id !== movieId
+        );
+
+        filtered.unshift({
+          id: movieId,
+          title,
+          poster,
+          progress: current,
+          duration: total,
+        });
+
+        localStorage.setItem(
+          "aurora-progress",
+          JSON.stringify(filtered.slice(0, 10))
+        );
+      }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [player, videoKey]);
+  }, [player, movieId, title, poster]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -72,16 +91,7 @@ export default function AuroraPlayer({
         playing={playing}
         onPlayerReady={(ytPlayer) => {
           setPlayer(ytPlayer);
-
           ytPlayer.mute();
-
-          const saved = localStorage.getItem(
-            `aurora-progress-${videoKey}`
-          );
-
-          if (saved) {
-            ytPlayer.seekTo(Number(saved), true);
-          }
         }}
       />
 

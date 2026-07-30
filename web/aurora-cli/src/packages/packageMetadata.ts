@@ -1,5 +1,4 @@
 export interface AuroraPackage {
-
   id: string;
 
   name: string;
@@ -8,4 +7,17 @@ export interface AuroraPackage {
 
   description: string;
 
+  author: string;
+
+  framework: string;
+
+  category: string;
+
+  tags: string[];
+
+  dependencies: string[];
+
+  repository?: string;
+
+  documentation?: string;
 }

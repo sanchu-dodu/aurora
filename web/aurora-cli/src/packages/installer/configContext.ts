@@ -1,47 +1,40 @@
 import fs from "fs/promises";
 import path from "path";
-
+import { TransactionManager } from "./transactionManager.js";
 
 export class ConfigContext {
 
   constructor(
-    private root:string
-  ){}
-
+    private projectPath: string,
+    private transaction: TransactionManager
+  ) {}
 
   async updatePackageJson(
-    dependency:string,
-    version:string
-  ){
+    updater: (json: any) => void
+  ): Promise<void> {
 
-    const file =
-      path.join(
-        this.root,
-        "package.json"
-      );
+    const packageJsonPath = path.join(
+      this.projectPath,
+      "package.json"
+    );
 
+    await this.transaction.recordModifiedFile(
+      packageJsonPath
+    );
 
     const content =
       await fs.readFile(
-        file,
-        "utf-8"
+        packageJsonPath,
+        "utf8"
       );
-
 
     const json =
       JSON.parse(content);
 
-
-    json.dependencies =
-      json.dependencies || {};
-
-
-    json.dependencies[dependency] =
-      version;
-
+    updater(json);
 
     await fs.writeFile(
-      file,
+      packageJsonPath,
       JSON.stringify(
         json,
         null,
@@ -49,12 +42,32 @@ export class ConfigContext {
       )
     );
 
-
     console.log(
-      `Added dependency ${dependency}`
+      "Updated package.json"
     );
 
   }
 
+  async addDependency(
+    packageName: string,
+    version = "latest"
+  ): Promise<void> {
+
+    await this.updatePackageJson(
+      (json) => {
+
+        json.dependencies ??= {};
+
+        json.dependencies[packageName] =
+          version;
+
+      }
+    );
+
+    console.log(
+      `Added dependency ${packageName}`
+    );
+
+  }
 
 }

@@ -1,11 +1,12 @@
-import { PackageInstaller } from "./installer/packageInstaller.js";
+import { PackageInstallationService }
+from "./installer/packageInstallationService.js";
 
 export async function installPackage(
   packageId: string
 ): Promise<void> {
 
   const installer =
-    new PackageInstaller();
+    new PackageInstallationService();
 
   await installer.install(
     packageId

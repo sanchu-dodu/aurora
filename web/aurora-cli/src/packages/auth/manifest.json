@@ -1,15 +1,13 @@
 {
   "id": "auth",
-  "name": "Authentication",
   "version": "1.0.0",
-  "description": "Authentication package.",
-  "author": "Aurora",
-  "homepage": "https://aurora.dev",
-  "frameworks": [
-    "nextjs"
+  "description": "Aurora authentication package",
+  "dependencies": [],
+  "env": [
+    "AUTH_SECRET",
+    "AUTH_URL"
   ],
-  "dependencies": [
-    "database",
-    "env"
+  "templates": [
+    "auth.ts.template"
   ]
 }

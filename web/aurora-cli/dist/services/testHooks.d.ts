@@ -1,0 +1,1 @@
+import "../core/hooks.js";

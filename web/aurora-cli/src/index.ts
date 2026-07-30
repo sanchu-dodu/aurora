@@ -8,25 +8,35 @@ import "./commands/listRegistration.js";
 import "./commands/pluginRegistration.js";
 import "./commands/configRegistration.js";
 import "./commands/templateRegistration.js";
-import "./features/modules/authFeature.js";
 import "./commands/featureRegistration.js";
 import "./commands/generateRegistration.js";
+import "./commands/packageRegistration.js";
+import "./commands/recoveryRegistration.js";
+
+import "./features/modules/authFeature.js";
 import "./hooks/defaultHooks.js";
 import "./templates/registerNext.js";
-import { discoverManifests } from "./packages/discovery/discoverManifests.js";
-import {
-  registerGenerator,
-} from "./generator/registry/generatorRegistry.js";
-import {
-  discoverPackages,
-} from "./packages/discovery/packageDiscovery.js";
-import "./commands/packageRegistration.js";
-
-import { discoverPlugins } from "./discovery/pluginDiscovery.js";
+import "./container/bootstrap/containerBootstrap.js";
 
 import { registerAllCommands } from "./core/commandRegistry.js";
 import { initializePlugins } from "./core/pluginLoader.js";
 
+import { discoverPlugins } from "./discovery/pluginDiscovery.js";
+import { discoverTemplates } from "./templates/registry/templateRegistry.js";
+
+import { discoverPackages } from "./packages/discovery/packageDiscovery.js";
+import { discoverManifests } from "./packages/discovery/discoverManifests.js";
+
+import { registerAllGenerators } from "./generator/registry/registerGenerators.js";
+
+import { RecoveryService } from "./packages/recovery/recoveryService.js";
+
+import { RuntimeManager } from "./runtime/runtimeManager.js";
+import { PluginLoader } from "./runtime/pluginLoader.js";
+
+import { container } 
+from "./container/bootstrap/containerBootstrap.js";
+import "./container/examples/testContainer.js";
 const program = new Command();
 
 program
@@ -39,21 +49,43 @@ program.action(() => {
   console.log("✅ Aurora CLI started successfully.");
 });
 
-registerAllCommands(program);
+async function main(): Promise<void> {
 
-// Automatically discover and load plugins
-await discoverPlugins();
+  showBanner();
 
-// Initialize discovered plugins
-await initializePlugins();
-import {
-  discoverTemplates,
-} from "./templates/registry/templateRegistry.js";
-await discoverTemplates();
-await discoverPackages();
-registerAllGenerators();
-import {
-  registerAllGenerators,
-} from "./generator/registry/registerGenerators.js";
-await discoverManifests();
-program.parse(process.argv);
+  registerAllCommands(program);
+
+  await discoverPlugins();
+
+  await initializePlugins();
+
+  await discoverTemplates();
+
+  await discoverPackages();
+
+  registerAllGenerators();
+
+  await discoverManifests();
+
+  const loader =
+    new PluginLoader();
+
+  loader.load();
+
+  const runtime =
+    new RuntimeManager();
+
+  await runtime.start();
+
+  const recovery =
+  container.resolve<RecoveryService>(
+    "RecoveryService"
+  );
+  await recovery.check();
+
+
+  program.parse(process.argv);
+
+}
+
+await main();

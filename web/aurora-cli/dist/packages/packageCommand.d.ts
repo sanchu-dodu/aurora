@@ -1,0 +1,12 @@
+export declare function packageListCommand(): Promise<void>;
+export declare function packageTestManifestCommand(): Promise<void>;
+export declare function packageResolveCommand(packageId: string): Promise<void>;
+export declare function packageInstallCommand(packageId: string): Promise<void>;
+export declare function packageUpdateCommand(packageId: string): Promise<void>;
+export declare function packageSearchCommand(query: string): Promise<void>;
+export declare function packageInfoCommand(packageId: string): Promise<void>;
+export declare function packageUninstallCommand(packageId: string): Promise<void>;
+export declare function packageVerifyCommand(packageId: string): Promise<void>;
+export declare function packageRepairCommand(packageId: string): Promise<void>;
+export declare function packageTreeCommand(packageId: string): Promise<void>;
+export declare function packagePublishCommand(packageId: string): Promise<void>;

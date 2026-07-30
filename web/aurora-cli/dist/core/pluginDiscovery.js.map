@@ -1,0 +1,1 @@
+{"version":3,"file":"pluginDiscovery.js","sourceRoot":"","sources":["../../src/core/pluginDiscovery.ts"],"names":[],"mappings":"AAAA,OAAO,IAAI,MAAM,MAAM,CAAC;AACxB,OAAO,EAAE,aAAa,EAAE,MAAM,iBAAiB,CAAC;AAEhD,MAAM,CAAC,KAAK,UAAU,eAAe;IACnC,MAAM,eAAe,GAAG,IAAI,CAAC,IAAI,CAC/B,OAAO,CAAC,GAAG,EAAE,EACb,KAAK,EACL,SAAS,CACV,CAAC;IAEF,OAAO,MAAM,aAAa,CAAC,eAAe,CAAC,CAAC;AAC9C,CAAC"}

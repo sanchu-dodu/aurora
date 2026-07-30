@@ -1,31 +1,39 @@
-import { AURORA_VERSION } from "../core/version.js";
+import {
+  ManifestSchema,
+  PackageManifest
+} from "./manifestSchema.js";
 
 
 export function validatePackage(
-  manifest:any
-):void {
+  manifest: unknown
+): PackageManifest {
 
 
-  const required =
-    manifest.aurora?.minimumVersion;
+  const result =
+    ManifestSchema.safeParse(
+      manifest
+    );
 
 
-  if(!required){
+  if (!result.success) {
 
-    return;
+    console.error(
+      "Invalid package manifest:"
+    );
 
-  }
 
+    console.error(
+      result.error.format()
+    );
 
-  if(
-    AURORA_VERSION < required
-  ){
 
     throw new Error(
-      `Package ${manifest.id} requires Aurora ${required} or higher`
+      "Package manifest validation failed"
     );
 
   }
 
+
+  return result.data;
 
 }

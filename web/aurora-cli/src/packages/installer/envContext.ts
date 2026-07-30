@@ -1,38 +1,35 @@
 import fs from "fs/promises";
 import path from "path";
-
+import { TransactionManager } from "./transactionManager.js";
 
 export class EnvContext {
 
-
   constructor(
-    private projectPath:string
-  ){}
-
-
+    private projectPath: string,
+    private transaction: TransactionManager
+  ) {}
 
   async addVariables(
-    variables:string[]
-  ):Promise<void>{
+    variables: string[]
+  ): Promise<void> {
 
+    const file = path.join(
+      this.projectPath,
+      ".env.example"
+    );
 
-    const file =
-      path.join(
-        this.projectPath,
-        ".env.example"
-      );
-
+    await this.transaction.recordModifiedFile(
+      file
+    );
 
     let content = "";
 
-
     try {
 
-      content =
-        await fs.readFile(
-          file,
-          "utf-8"
-        );
+      content = await fs.readFile(
+        file,
+        "utf8"
+      );
 
     } catch {
 
@@ -40,36 +37,25 @@ export class EnvContext {
 
     }
 
+    for (const variable of variables) {
 
+      if (!content.includes(`${variable}=`)) {
 
-    for(const variable of variables){
-
-
-      if(!content.includes(variable)){
-
-
-        content +=
-          `${variable}=\n`;
-
+        content += `${variable}=\n`;
 
       }
 
     }
-
-
 
     await fs.writeFile(
       file,
       content
     );
 
-
     console.log(
       "Updated .env.example"
     );
 
-
   }
-
 
 }

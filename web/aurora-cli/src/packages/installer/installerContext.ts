@@ -2,42 +2,50 @@ import fs from "fs/promises";
 import path from "path";
 import { ConfigContext } from "./configContext.js";
 import { EnvContext } from "./envContext.js";
-
+import { TransactionManager } from "./transactionManager.js";
 
 export class InstallerContext {
 
-  config: ConfigContext;
-  env: EnvContext;
+  public readonly transaction: TransactionManager;
 
+  public readonly config: ConfigContext;
+
+  public readonly env: EnvContext;
 
   constructor(
     private projectPath: string
   ) {
 
+    this.transaction =
+      new TransactionManager();
+
     this.config =
       new ConfigContext(
-        projectPath
+        projectPath,
+        this.transaction
       );
-
 
     this.env =
       new EnvContext(
-        projectPath
+        projectPath,
+        this.transaction
       );
 
   }
 
+  getProjectPath(): string {
+
+    return this.projectPath;
+
+  }
 
   log(
     message: string
   ): void {
 
-    console.log(
-      message
-    );
+    console.log(message);
 
   }
-
 
   async createFile(
     filePath: string,
@@ -50,7 +58,6 @@ export class InstallerContext {
         filePath
       );
 
-
     await fs.mkdir(
       path.dirname(fullPath),
       {
@@ -58,12 +65,14 @@ export class InstallerContext {
       }
     );
 
-
     await fs.writeFile(
       fullPath,
       content
     );
 
+    this.transaction.recordCreatedFile(
+      fullPath
+    );
 
     console.log(
       `Created ${filePath}`

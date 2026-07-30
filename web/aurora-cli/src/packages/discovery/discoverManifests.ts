@@ -6,44 +6,61 @@ import { registerPackage } from "../registry/packageRegistry.js";
 
 export async function discoverManifests(): Promise<void> {
 
-  const packagesRoot =
-    path.join(
-      process.cwd(),
-      "packages"
-    );
+  console.log("Running discoverManifests...");
 
-  if (!(await fs.pathExists(packagesRoot))) {
+  const packagesDirectory = path.join(
+    process.cwd(),
+    "src",
+    "packages"
+  );
+
+  console.log("Looking in:", packagesDirectory);
+
+  if (!(await fs.pathExists(packagesDirectory))) {
     return;
   }
 
-  const directories =
-    await fs.readdir(packagesRoot);
+  const entries = await fs.readdir(packagesDirectory);
 
-  for (const directory of directories) {
+  console.log("Entries:", entries);
 
-    const manifestPath =
-      path.join(
-        packagesRoot,
-        directory,
-        "manifest.json"
-      );
+  for (const entry of entries) {
 
-    if (!(await fs.pathExists(manifestPath))) {
+    console.log("Checking:", entry);
+
+    const manifestFile = path.join(
+      packagesDirectory,
+      entry,
+      "manifest.json"
+    );
+
+    console.log("Manifest:", manifestFile);
+
+    console.log(
+      "Exists:",
+      await fs.pathExists(manifestFile)
+    );
+
+    if (!(await fs.pathExists(manifestFile))) {
       continue;
     }
 
-    const manifest =
-      await loadManifest(
-        manifestPath
-      );
+    const manifest = await loadManifest(manifestFile);
 
     registerPackage({
       id: manifest.id,
-      name: manifest.name,
+      name: manifest.id,
       version: manifest.version,
       description: manifest.description,
+      author: manifest.author,
+      framework: manifest.framework,
+      category: manifest.category,
+      tags: manifest.tags,
+      dependencies: manifest.dependencies,
+      repository: manifest.repository,
+      documentation: manifest.documentation,
     });
 
+    console.log(`✔ Registered package: ${manifest.id}`);
   }
-
 }
