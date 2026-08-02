@@ -20,3 +20,6 @@ __pycache__/
 
 # Logs
 *.log
+# Aurora CLI local state and generated test workspace
+/aurora-cli/.aurora/
+/aurora-cli/AuroraTest/

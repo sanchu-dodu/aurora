@@ -16,7 +16,11 @@ export class ResolveDependenciesStep
 
     console.log("Resolving dependencies...");
 
-    for (const dependency of this.context.packageData.dependencies) {
+    this.context.resolvedDependencies = [
+      ...(this.context.packageData.dependencies ?? [])
+    ];
+
+    for (const dependency of this.context.resolvedDependencies) {
 
       console.log(`• ${dependency}`);
 

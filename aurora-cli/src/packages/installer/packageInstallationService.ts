@@ -1,5 +1,5 @@
-import { PackageRegistry } from "../registry/packageRegistry.js";
-import { runInstallation } from "../installation/installationScheduler.js";
+﻿import { PackageRegistry } from "../registry/packageRegistry.js";
+import { runInstallation } from "../installation/installationPipeline.js";
 import { InstallationContext } from "./installationContext.js";
 export class PackageInstallationService {
 
@@ -22,7 +22,7 @@ export class PackageInstallationService {
 
     console.log(`Found package: ${pkg.name}`);
 console.log(`Version: ${pkg.version}`);
-console.log("✔ Package located.");
+console.log("âœ” Package located.");
 
 const context = new InstallationContext(
     process.cwd(),
@@ -33,7 +33,7 @@ const context = new InstallationContext(
 await runInstallation(context);
 
 console.log("");
-console.log("✔ Installation completed.");
+console.log("âœ” Installation completed.");
   }
 
 }

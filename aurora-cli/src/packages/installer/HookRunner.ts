@@ -1,9 +1,9 @@
-import { getHooks } from "../../hooks/hookRegistry.js";
+import { getHooks, type HookName } from "../../hooks/hookRegistry.js";
 
 export class HookRunner {
 
   async execute(
-    event: string,
+    event: HookName,
     ...args: unknown[]
   ): Promise<void> {
 
