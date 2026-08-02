@@ -1,51 +1,46 @@
-import fs from "fs-extra";
-import path from "path";
+﻿import fs from "fs-extra";
+import path from "node:path";
 
 import { loadManifest } from "../manifestLoader.js";
 import { registerPackage } from "../registry/packageRegistry.js";
 
 export async function discoverManifests(): Promise<void> {
-
-  console.log("Running discoverManifests...");
-
   const packagesDirectory = path.join(
     process.cwd(),
     "src",
     "packages"
   );
 
-  console.log("Looking in:", packagesDirectory);
-
   if (!(await fs.pathExists(packagesDirectory))) {
     return;
   }
 
-  const entries = await fs.readdir(packagesDirectory);
+  const entries = await fs.readdir(
+    packagesDirectory,
+    {
+      withFileTypes: true,
+    }
+  );
 
-  console.log("Entries:", entries);
+  const discoveredPackageIds: string[] = [];
 
   for (const entry of entries) {
-
-    console.log("Checking:", entry);
+    if (!entry.isDirectory()) {
+      continue;
+    }
 
     const manifestFile = path.join(
       packagesDirectory,
-      entry,
+      entry.name,
       "manifest.json"
-    );
-
-    console.log("Manifest:", manifestFile);
-
-    console.log(
-      "Exists:",
-      await fs.pathExists(manifestFile)
     );
 
     if (!(await fs.pathExists(manifestFile))) {
       continue;
     }
 
-    const manifest = await loadManifest(manifestFile);
+    const manifest =
+      await loadManifest(manifestFile);
 
     registerPackage({
       id: manifest.id,
@@ -61,6 +56,19 @@ export async function discoverManifests(): Promise<void> {
       documentation: manifest.documentation,
     });
 
-    console.log(`✔ Registered package: ${manifest.id}`);
+    discoveredPackageIds.push(manifest.id);
   }
+
+  if (discoveredPackageIds.length === 0) {
+    console.log(
+      "No Aurora package manifests discovered."
+    );
+
+    return;
+  }
+
+  console.log(
+    `Discovered ${discoveredPackageIds.length} package manifest(s): ` +
+    `${discoveredPackageIds.join(", ")}.`
+  );
 }
