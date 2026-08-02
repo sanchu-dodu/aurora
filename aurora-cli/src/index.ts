@@ -1,4 +1,7 @@
-﻿import { Command } from "commander";
+﻿import {
+  Command,
+  CommanderError,
+} from "commander";
 
 import { showBanner } from "./utils/banner.js";
 
@@ -44,6 +47,8 @@ program
   .description("Aurora Command Line Interface")
   .version("0.1.0");
 
+program.exitOverride();
+
 program.action(() => {
   console.log("Aurora CLI started successfully.");
 });
@@ -80,7 +85,18 @@ async function main(): Promise<void> {
 
     await recovery.check();
 
-    await program.parseAsync(process.argv);
+    try {
+      await program.parseAsync(process.argv);
+    } catch (error) {
+      if (
+        error instanceof CommanderError &&
+        error.exitCode === 0
+      ) {
+        return;
+      }
+
+      throw error;
+    }
   } finally {
     await kernel.shutdown();
   }
