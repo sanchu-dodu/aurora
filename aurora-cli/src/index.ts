@@ -1,4 +1,4 @@
-import { Command } from "commander";
+﻿import { Command } from "commander";
 
 import { showBanner } from "./utils/banner.js";
 
@@ -17,6 +17,7 @@ import "./features/modules/authFeature.js";
 import "./hooks/defaultHooks.js";
 import "./templates/registerNext.js";
 import "./container/bootstrap/containerBootstrap.js";
+import "./container/examples/testContainer.js";
 
 import { registerAllCommands } from "./core/commandRegistry.js";
 import { initializePlugins } from "./core/pluginLoader.js";
@@ -31,12 +32,11 @@ import { registerAllGenerators } from "./generator/registry/registerGenerators.j
 
 import { RecoveryService } from "./packages/recovery/recoveryService.js";
 
-import { RuntimeManager } from "./runtime/runtimeManager.js";
-import { PluginLoader } from "./runtime/pluginLoader.js";
+import { KernelBuilder } from "./kernel/kernelBuilder.js";
+import { RuntimeKernelService } from "./runtime/runtimeKernelService.js";
 
-import { container } 
-from "./container/bootstrap/containerBootstrap.js";
-import "./container/examples/testContainer.js";
+import { container } from "./container/bootstrap/containerBootstrap.js";
+
 const program = new Command();
 
 program
@@ -45,47 +45,45 @@ program
   .version("0.1.0");
 
 program.action(() => {
-  showBanner();
-  console.log("✅ Aurora CLI started successfully.");
+  console.log("Aurora CLI started successfully.");
 });
 
 async function main(): Promise<void> {
-
   showBanner();
 
   registerAllCommands(program);
 
   await discoverPlugins();
-
   await initializePlugins();
 
   await discoverTemplates();
-
   await discoverPackages();
 
   registerAllGenerators();
 
   await discoverManifests();
 
-  const loader =
-    new PluginLoader();
+  const kernel = new KernelBuilder()
+    .withWorkspace(process.cwd())
+    .withProjectName("Aurora CLI")
+    .addService(new RuntimeKernelService())
+    .build();
 
-  loader.load();
+  try {
+    await kernel.boot();
+    kernel.start();
 
-  const runtime =
-    new RuntimeManager();
+    const recovery =
+      container.resolve<RecoveryService>(
+        "RecoveryService"
+      );
 
-  await runtime.start();
+    await recovery.check();
 
-  const recovery =
-  container.resolve<RecoveryService>(
-    "RecoveryService"
-  );
-  await recovery.check();
-
-
-  program.parse(process.argv);
-
+    await program.parseAsync(process.argv);
+  } finally {
+    await kernel.shutdown();
+  }
 }
 
 await main();
