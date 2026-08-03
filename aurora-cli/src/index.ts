@@ -74,6 +74,8 @@ async function main(): Promise<void> {
     .addService(new RuntimeKernelService())
     .build();
 
+  let operationError: unknown;
+
   try {
     await kernel.boot();
     kernel.start();
@@ -85,21 +87,73 @@ async function main(): Promise<void> {
 
     await recovery.check();
 
-    try {
-      await program.parseAsync(process.argv);
-    } catch (error) {
-      if (
-        error instanceof CommanderError &&
-        error.exitCode === 0
-      ) {
-        return;
-      }
+    await program.parseAsync(process.argv);
+  } catch (error) {
+    const isSuccessfulCommanderExit =
+      error instanceof CommanderError &&
+      error.exitCode === 0;
 
-      throw error;
+    if (!isSuccessfulCommanderExit) {
+      operationError = error;
     }
-  } finally {
+  }
+
+  try {
     await kernel.shutdown();
+  } catch (shutdownError) {
+    if (operationError) {
+      throw new AggregateError(
+        [
+          operationError,
+          shutdownError,
+        ],
+        "The CLI operation and Kernel shutdown both failed."
+      );
+    }
+
+    throw shutdownError;
+  }
+
+  if (operationError) {
+    throw operationError;
   }
 }
 
-await main();
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+function handleFatalError(error: unknown): void {
+  if (error instanceof CommanderError) {
+    process.exitCode = error.exitCode;
+    return;
+  }
+
+  if (error instanceof AggregateError) {
+    console.error("");
+    console.error("Aurora CLI encountered multiple failures:");
+
+    for (const innerError of error.errors) {
+      console.error(
+        `- ${getErrorMessage(innerError)}`
+      );
+    }
+  } else {
+    console.error("");
+    console.error(
+      `Aurora CLI failed: ${getErrorMessage(error)}`
+    );
+  }
+
+  process.exitCode = 1;
+}
+
+try {
+  await main();
+} catch (error) {
+  handleFatalError(error);
+}
