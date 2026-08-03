@@ -1,3 +1,5 @@
+﻿import path from "node:path";
+
 import { resolveDependencies } from "../dependencyResolver.js";
 import { InstallerContext } from "./installerContext.js";
 import { validatePackage } from "../packageValidator.js";
@@ -10,15 +12,11 @@ import { InstallationScheduler } from "../installation/installationScheduler.js"
 import { PackageWorker } from "../installation/packageWorker.js";
 
 export class PackageInstaller {
-
   async install(
     packageId: string
   ): Promise<void> {
-
     const packages =
-      await resolveDependencies(
-        packageId
-      );
+      await resolveDependencies(packageId);
 
     const context =
       new InstallerContext(
@@ -37,42 +35,26 @@ export class PackageInstaller {
     const worker =
       new PackageWorker();
 
-    console.log();
+    console.log("");
     console.log("Installing Packages");
     console.log("===================");
-    console.log();
+    console.log("");
 
     try {
-
-      /*
-       * Build dependency graph
-       */
-
-      for (const pkg of packages) {
-
+      for (const packageName of packages) {
         const manifest =
           await registry.getPackage(
-            pkg
+            packageName
           );
 
-        validatePackage(
-          manifest
-        );
-
-        compatibility.check(
-          manifest
-        );
+        validatePackage(manifest);
+        compatibility.check(manifest);
 
         dependencyGraph.addPackage(
           manifest.id,
           manifest.dependencies ?? []
         );
-
       }
-
-      /*
-       * Validate dependency graph
-       */
 
       const analyzer =
         new DependencyAnalyzer(
@@ -80,10 +62,6 @@ export class PackageInstaller {
         );
 
       analyzer.checkCircularDependencies();
-
-      /*
-       * Compute installation order
-       */
 
       const sorter =
         new TopologicalSorter(
@@ -93,21 +71,15 @@ export class PackageInstaller {
       const installationOrder =
         sorter.sort();
 
-      console.log();
+      console.log("");
       console.log("Installation Order");
       console.log("==================");
 
-      for (const pkg of installationOrder) {
-
-        console.log(pkg);
-
+      for (const packageName of installationOrder) {
+        console.log(packageName);
       }
 
-      console.log();
-
-      /*
-       * Create installation batches
-       */
+      console.log("");
 
       const scheduler =
         new InstallationScheduler(
@@ -122,44 +94,50 @@ export class PackageInstaller {
 
       batches.forEach(
         (batch, index) => {
-
           console.log(
             `Batch ${index + 1}: ${batch.join(", ")}`
           );
-
         }
       );
 
-      console.log();
+      console.log("");
 
-      /*
-       * Install packages
-       */
+      const projectPath =
+        context.getProjectPath();
+
+      await context.transaction.recordModifiedFile(
+        path.join(
+          projectPath,
+          ".aurora",
+          "cache.json"
+        )
+      );
+
+      await context.transaction.recordModifiedFile(
+        path.join(
+          projectPath,
+          "aurora.lock"
+        )
+      );
 
       for (const batch of batches) {
-
-  await Promise.all(
-
-    batch.map(pkg =>
-      worker.install(
-        pkg,
-        context
-      )
-    )
-
-  );
-
-}
+        await Promise.all(
+          batch.map((packageName) =>
+            worker.install(
+              packageName,
+              context
+            )
+          )
+        );
+      }
 
       dependencyGraph.print();
 
       console.log(
         "Installation finished."
       );
-
     } catch (error) {
-
-      console.log();
+      console.log("");
       console.log(
         "Installation failed."
       );
@@ -167,9 +145,6 @@ export class PackageInstaller {
       await context.transaction.rollback();
 
       throw error;
-
     }
-
   }
-
 }

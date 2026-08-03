@@ -1,108 +1,97 @@
-import fs from "fs/promises";
+﻿import fs from "node:fs/promises";
+import path from "node:path";
 
 export class TransactionManager {
+  private readonly originalFiles =
+    new Map<string, string | null>();
 
-  private createdFiles: string[] = [];
-
-  private modifiedFiles = new Map<
-    string,
-    string
-  >();
-
-  recordCreatedFile(
-    file: string
-  ): void {
-
-    this.createdFiles.push(file);
-
+  recordCreatedFile(file: string): void {
+    if (!this.originalFiles.has(file)) {
+      this.originalFiles.set(file, null);
+    }
   }
 
   async recordModifiedFile(
     file: string
   ): Promise<void> {
-
-    if (this.modifiedFiles.has(file)) {
-
+    if (this.originalFiles.has(file)) {
       return;
-
     }
 
     try {
+      const content = await fs.readFile(
+        file,
+        "utf8"
+      );
 
-      const content =
-        await fs.readFile(
-          file,
-          "utf8"
-        );
-
-      this.modifiedFiles.set(
+      this.originalFiles.set(
         file,
         content
       );
+    } catch (error) {
+      const code =
+        (error as NodeJS.ErrnoException).code;
 
-    } catch {
+      if (code === "ENOENT") {
+        this.originalFiles.set(file, null);
+        return;
+      }
 
-      // File didn't exist before
-
+      throw error;
     }
-
   }
 
   async rollback(): Promise<void> {
-
-    console.log();
+    console.log("");
     console.log(
       "Rolling back installation..."
     );
 
-    // Remove newly created files
+    const entries =
+      Array.from(
+        this.originalFiles.entries()
+      ).reverse();
 
-    for (
-      const file of this.createdFiles.reverse()
-    ) {
-
+    for (const [file, originalContent] of entries) {
       try {
+        if (originalContent === null) {
+          await fs.rm(
+            file,
+            {
+              force: true,
+            }
+          );
 
-        await fs.unlink(file);
+          console.log(`Removed ${file}`);
+          continue;
+        }
 
-        console.log(
-          `Removed ${file}`
+        await fs.mkdir(
+          path.dirname(file),
+          {
+            recursive: true,
+          }
         );
-
-      } catch {
-
-        // Ignore
-
-      }
-
-    }
-
-    // Restore modified files
-
-    for (
-      const [file, content]
-      of this.modifiedFiles
-    ) {
-
-      try {
 
         await fs.writeFile(
           file,
-          content
+          originalContent,
+          "utf8"
         );
 
-        console.log(
-          `Restored ${file}`
+        console.log(`Restored ${file}`);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : String(error);
+
+        console.error(
+          `Rollback warning for ${file}: ${message}`
         );
-
-      } catch {
-
-        // Ignore
-
       }
-
     }
 
+    this.originalFiles.clear();
   }
-
 }

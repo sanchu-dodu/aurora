@@ -1,87 +1,70 @@
-import fs from "fs/promises";
-import path from "path";
+﻿import fs from "node:fs/promises";
+import path from "node:path";
+
 import { WriteLock } from "../synchronization/writeLock.js";
 
 export interface CachedPackage {
-
   version: string;
-
   installedAt: string;
-
   checksum?: string;
-
   verified?: boolean;
-
 }
 
 export class CacheManager {
+  private readonly cacheFile: string;
 
-  private cacheFile: string;
-
-  private lock = new WriteLock();
+  private readonly lock =
+    new WriteLock();
 
   constructor(
-    private projectPath: string
+    private readonly projectPath: string
   ) {
-
-    this.cacheFile =
-      path.join(
-        projectPath,
-        ".aurora",
-        "cache.json"
-      );
-
+    this.cacheFile = path.join(
+      projectPath,
+      ".aurora",
+      "cache.json"
+    );
   }
 
   private async ensureCache(): Promise<void> {
-
     await fs.mkdir(
       path.dirname(this.cacheFile),
       {
-        recursive: true
+        recursive: true,
       }
     );
 
     try {
-
-      await fs.access(
-        this.cacheFile
-      );
-
+      await fs.access(this.cacheFile);
     } catch {
-
       await fs.writeFile(
         this.cacheFile,
-        "{}"
-      );
-
-    }
-
-  }
-
-  async read(): Promise<Record<string, CachedPackage>> {
-
-    await this.ensureCache();
-
-    const content =
-      await fs.readFile(
-        this.cacheFile,
+        "{}",
         "utf8"
       );
-
-    return JSON.parse(content);
-
+    }
   }
 
- async write(
-  cache: Record<string, CachedPackage>
-): Promise<void> {
+  private async readUnlocked(): Promise<
+    Record<string, CachedPackage>
+  > {
+    await this.ensureCache();
 
-  await this.ensureCache();
+    const content = await fs.readFile(
+      this.cacheFile,
+      "utf8"
+    );
 
-  await this.lock.acquire();
+    return JSON.parse(content) as Record<
+      string,
+      CachedPackage
+    >;
+  }
 
-  try {
+  private async writeUnlocked(
+    cache: Record<string, CachedPackage>
+  ): Promise<void> {
+    await this.ensureCache();
 
     await fs.writeFile(
       this.cacheFile,
@@ -89,56 +72,59 @@ export class CacheManager {
         cache,
         null,
         2
-      )
+      ),
+      "utf8"
     );
-
-  } finally {
-
-    this.lock.release();
-
   }
 
-}
+  async read(): Promise<
+    Record<string, CachedPackage>
+  > {
+    return this.readUnlocked();
+  }
+
+  async write(
+    cache: Record<string, CachedPackage>
+  ): Promise<void> {
+    await this.lock.acquire();
+
+    try {
+      await this.writeUnlocked(cache);
+    } finally {
+      this.lock.release();
+    }
+  }
 
   async isInstalled(
     packageName: string
   ): Promise<boolean> {
-
-    const cache =
-      await this.read();
+    const cache = await this.read();
 
     return packageName in cache;
-
   }
 
   async install(
-
     packageName: string,
-
     version: string,
-
     checksum?: string
-
   ): Promise<void> {
+    await this.lock.acquire();
 
-    const cache =
-      await this.read();
+    try {
+      const cache =
+        await this.readUnlocked();
 
-    cache[packageName] = {
+      cache[packageName] = {
+        version,
+        installedAt:
+          new Date().toISOString(),
+        checksum,
+        verified: true,
+      };
 
-      version,
-
-      installedAt:
-        new Date().toISOString(),
-
-      checksum,
-
-      verified: true
-
-    };
-
-    await this.write(cache);
-
+      await this.writeUnlocked(cache);
+    } finally {
+      this.lock.release();
+    }
   }
-
 }

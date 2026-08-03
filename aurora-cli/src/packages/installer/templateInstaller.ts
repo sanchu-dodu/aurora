@@ -1,68 +1,82 @@
-import fs from "fs/promises";
-import path from "path";
+﻿import fs from "node:fs/promises";
+import path from "node:path";
+
+import type { InstallerContext } from "./installerContext.js";
 
 export async function installTemplates(
   packageId: string,
-  projectPath: string
+  context: InstallerContext
 ): Promise<void> {
-
-  const templateDir = path.join(
+  const templateDirectory = path.join(
     process.cwd(),
     "packages",
     packageId,
     "templates"
   );
-console.log("Template directory:", templateDir);
+
+  let entries;
 
   try {
+    entries = await fs.readdir(
+      templateDirectory,
+      {
+        withFileTypes: true,
+      }
+    );
+  } catch (error) {
+    const code =
+      (error as NodeJS.ErrnoException).code;
 
-    const files = await fs.readdir(templateDir);
-console.log("Template files:", files);
-
-    for (const file of files) {
-
-      const source = path.join(
-        templateDir,
-        file
-      );
-
-      const target = path.join(
-        projectPath,
-        "src",
-        file.replace(".template", "")
-      );
-
-      await fs.mkdir(
-        path.dirname(target),
-        {
-          recursive: true
-        }
-      );
-
-      const content =
-        await fs.readFile(
-          source,
-          "utf8"
-        );
-
-      await fs.writeFile(
-        target,
-        content
-      );
-
-      console.log(
-        `Installed template ${file}`
-      );
-
+    if (code === "ENOENT") {
+      return;
     }
 
- } catch (error) {
+    throw error;
+  }
 
-  console.error(
-    "Template installer error:",
-    error
-  );
+  for (const entry of entries) {
+    if (!entry.isFile()) {
+      continue;
+    }
 
-}
+    const source = path.join(
+      templateDirectory,
+      entry.name
+    );
 
+    const target = path.join(
+      context.getProjectPath(),
+      "src",
+      entry.name.replace(
+        ".template",
+        ""
+      )
+    );
+
+    const content = await fs.readFile(
+      source,
+      "utf8"
+    );
+
+    await context.transaction.recordModifiedFile(
+      target
+    );
+
+    await fs.mkdir(
+      path.dirname(target),
+      {
+        recursive: true,
+      }
+    );
+
+    await fs.writeFile(
+      target,
+      content,
+      "utf8"
+    );
+
+    console.log(
+      `Installed template ${entry.name}`
+    );
+  }
 }
