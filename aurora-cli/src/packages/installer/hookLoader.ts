@@ -1,36 +1,24 @@
-import path from "path";
-import { pathToFileURL } from "url";
+﻿import path from "node:path";
+import { pathToFileURL } from "node:url";
 
+import { getDefaultPackageRoot } from "../packagePaths.js";
 
 export async function loadHooks(
-  packageId: string
+  packageId: string,
+  packageRoot = getDefaultPackageRoot()
 ) {
-
-  const hookPath =
-    path.join(
-      process.cwd(),
-      "packages",
-      packageId,
-      "hooks",
-      "hooks.js"
-    );
-
+  const hookPath = path.join(
+    packageRoot,
+    packageId,
+    "hooks",
+    "hooks.js"
+  );
 
   try {
-
-    const module =
-      await import(
-        pathToFileURL(hookPath).href
-      );
-
-
-    return module;
-
-
-  } catch (error) {
-
+    return await import(
+      pathToFileURL(hookPath).href
+    );
+  } catch {
     return null;
-
   }
-
 }

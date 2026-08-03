@@ -2,14 +2,15 @@
 import path from "node:path";
 
 import type { InstallerContext } from "./installerContext.js";
+import { getDefaultPackageRoot } from "../packagePaths.js";
 
 export async function installTemplates(
   packageId: string,
-  context: InstallerContext
+  context: InstallerContext,
+  packageRoot = getDefaultPackageRoot()
 ): Promise<void> {
   const templateDirectory = path.join(
-    process.cwd(),
-    "packages",
+    packageRoot,
     packageId,
     "templates"
   );

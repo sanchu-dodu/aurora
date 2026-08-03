@@ -8,14 +8,22 @@ import { PackageRegistry } from "../registry/registry.js";
 import { CacheManager } from "../cache/cacheManager.js";
 import { IntegrityChecker } from "../integrity/integrityChecker.js";
 import { LockManager } from "../lock/lockManager.js";
+import { getDefaultPackageRoot } from "../packagePaths.js";
 
 export class PackageWorker {
+  constructor(
+    private readonly packageRoot =
+      getDefaultPackageRoot()
+  ) {}
+
   async install(
     packageId: string,
     context: InstallerContext
   ): Promise<void> {
     const registry =
-      new PackageRegistry();
+      new PackageRegistry(
+        this.packageRoot
+      );
 
     const cache =
       new CacheManager(
@@ -45,22 +53,27 @@ export class PackageWorker {
     const start =
       performance.now();
 
-    const hooks =
-      await loadHooks(packageId);
+    const hooks = await loadHooks(
+      packageId,
+      this.packageRoot
+    );
 
     if (hooks?.beforeInstall) {
       await hooks.beforeInstall(context);
     }
 
-    const installer =
-      await loadInstaller(packageId);
+    const installer = await loadInstaller(
+      packageId,
+      this.packageRoot
+    );
 
     if (installer) {
       await installer(context);
 
       await installTemplates(
         packageId,
-        context
+        context,
+        this.packageRoot
       );
     } else {
       console.log(

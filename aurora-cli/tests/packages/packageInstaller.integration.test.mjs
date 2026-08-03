@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { CacheManager } from "../../dist/packages/cache/cacheManager.js";
 import { LockManager } from "../../dist/packages/lock/lockManager.js";
 import { PackageInstaller } from "../../dist/packages/installer/packageInstaller.js";
+import { installPackage } from "../../dist/packages/installCommand.js";
 
 const cliRoot = process.cwd();
 
@@ -171,7 +172,10 @@ test(
   async () => {
     await withTemporaryProject(
       async ({ root }) => {
-        const installer = new PackageInstaller();
+        const installer = new PackageInstaller({
+          packageRoot: join(root, "packages"),
+          projectRoot: root,
+        });
 
         await installer.install("auth");
 
@@ -297,7 +301,10 @@ export async function afterInstall() {
           "utf8"
         );
 
-        const installer = new PackageInstaller();
+        const installer = new PackageInstaller({
+          packageRoot: join(root, "packages"),
+          projectRoot: root,
+        });
 
         await assert.rejects(
           installer.install("broken"),
@@ -503,7 +510,10 @@ export async function afterInstall() {
         );
 
         const installer =
-          new PackageInstaller();
+          new PackageInstaller({
+            packageRoot: join(root, "packages"),
+            projectRoot: root,
+          });
 
         await assert.rejects(
           installer.install(
@@ -564,3 +574,115 @@ export async function afterInstall() {
     );
   }
 );
+
+
+
+test(
+  "package install command reads packages from Aurora and writes to the target project",
+  async () => {
+    const projectRoot = await mkdtemp(
+      join(tmpdir(), "aurora-external-project-")
+    );
+
+    const previousDirectory =
+      process.cwd();
+
+    try {
+      await writeFile(
+        join(projectRoot, "package.json"),
+        JSON.stringify(
+          {
+            name: "external-aurora-project",
+            version: "1.0.0",
+            private: true,
+            type: "module",
+            dependencies: {},
+          },
+          null,
+          2
+        ) + "\n",
+        "utf8"
+      );
+
+      await writeFile(
+        join(projectRoot, ".env"),
+        "EXISTING_VALUE=preserved\n",
+        "utf8"
+      );
+
+      process.chdir(projectRoot);
+
+      await installPackage("auth");
+
+      assert.equal(
+        await exists(
+          join(
+            projectRoot,
+            "src",
+            "auth.ts"
+          )
+        ),
+        true
+      );
+
+      assert.equal(
+        await exists(
+          join(
+            projectRoot,
+            ".aurora",
+            "cache.json"
+          )
+        ),
+        true
+      );
+
+      assert.equal(
+        await exists(
+          join(
+            projectRoot,
+            "aurora.lock"
+          )
+        ),
+        true
+      );
+
+      assert.equal(
+        await exists(
+          join(projectRoot, "packages")
+        ),
+        false
+      );
+
+      const lock = JSON.parse(
+        await readFile(
+          join(
+            projectRoot,
+            "aurora.lock"
+          ),
+          "utf8"
+        )
+      );
+
+      assert.deepEqual(
+        Object.keys(lock.packages).sort(),
+        [
+          "auth",
+          "database",
+          "env",
+        ]
+      );
+    } finally {
+      process.chdir(previousDirectory);
+
+      await rm(
+        projectRoot,
+        {
+          recursive: true,
+          force: true,
+        }
+      );
+    }
+  }
+);
+
+

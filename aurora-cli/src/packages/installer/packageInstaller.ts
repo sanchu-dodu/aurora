@@ -10,21 +10,48 @@ import { DependencyAnalyzer } from "../graph/dependencyAnalyzer.js";
 import { TopologicalSorter } from "../graph/topologicalSorter.js";
 import { InstallationScheduler } from "../installation/installationScheduler.js";
 import { PackageWorker } from "../installation/packageWorker.js";
+import { getDefaultPackageRoot } from "../packagePaths.js";
+
+export interface PackageInstallerOptions {
+  packageRoot?: string;
+  projectRoot?: string;
+}
 
 export class PackageInstaller {
+  private readonly packageRoot: string;
+
+  private readonly projectRoot: string;
+
+  constructor(
+    options: PackageInstallerOptions = {}
+  ) {
+    this.packageRoot =
+      options.packageRoot ??
+      getDefaultPackageRoot();
+
+    this.projectRoot =
+      options.projectRoot ??
+      process.cwd();
+  }
+
   async install(
     packageId: string
   ): Promise<void> {
     const packages =
-      await resolveDependencies(packageId);
+      await resolveDependencies(
+        packageId,
+        this.packageRoot
+      );
 
     const context =
       new InstallerContext(
-        process.cwd()
+        this.projectRoot
       );
 
     const registry =
-      new PackageRegistry();
+      new PackageRegistry(
+        this.packageRoot
+      );
 
     const compatibility =
       new CompatibilityChecker();
@@ -33,7 +60,9 @@ export class PackageInstaller {
       new DependencyGraph();
 
     const worker =
-      new PackageWorker();
+      new PackageWorker(
+        this.packageRoot
+      );
 
     console.log("");
     console.log("Installing Packages");
@@ -102,12 +131,9 @@ export class PackageInstaller {
 
       console.log("");
 
-      const projectPath =
-        context.getProjectPath();
-
       await context.transaction.recordModifiedFile(
         path.join(
-          projectPath,
+          this.projectRoot,
           ".aurora",
           "cache.json"
         )
@@ -115,7 +141,7 @@ export class PackageInstaller {
 
       await context.transaction.recordModifiedFile(
         path.join(
-          projectPath,
+          this.projectRoot,
           "aurora.lock"
         )
       );
