@@ -24,10 +24,9 @@ export async function configGetCommand(
   const config = await loadConfig();
 
   if (!(key in config)) {
-    console.log(
+    throw new Error(
       `Unknown configuration key '${key}'.`
     );
-    return;
   }
 
   console.log(
@@ -44,10 +43,9 @@ export async function configSetCommand(
   const config = await loadConfig();
 
   if (!(key in config)) {
-    console.log(
+    throw new Error(
       `Unknown configuration key '${key}'.`
     );
-    return;
   }
 
 

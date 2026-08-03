@@ -1,4 +1,4 @@
-﻿import path from "node:path";
+import path from "node:path";
 
 import type {
   ProjectConfig,
@@ -42,11 +42,9 @@ export async function installProject(
     );
 
   if (!template) {
-    console.log(
+    throw new Error(
       `Template '${templateId}' not found.`
     );
-
-    return false;
   }
 
   const templateDirectory =

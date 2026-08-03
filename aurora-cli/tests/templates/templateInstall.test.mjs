@@ -1,4 +1,4 @@
-﻿import test from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
@@ -187,20 +187,18 @@ test(
       );
 
     try {
-      const installed =
-        await installProject(
-          "missing-template",
-          "should-not-exist",
-          {
-            projectCreation: {
-              workspaceRoot,
-            },
-          }
-        );
-
-      assert.equal(
-        installed,
-        false
+      await assert.rejects(
+        () =>
+          installProject(
+            "missing-template",
+            "should-not-exist",
+            {
+              projectCreation: {
+                workspaceRoot,
+              },
+            }
+          ),
+        /Template 'missing-template' not found/
       );
 
       assert.equal(
