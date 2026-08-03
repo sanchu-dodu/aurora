@@ -1,5 +1,8 @@
-export interface AuroraFeature {
+﻿import type {
+  FeatureInstallContext,
+} from "./installers/featureInstallContext.js";
 
+export interface AuroraFeature {
   id: string;
 
   displayName: string;
@@ -11,7 +14,6 @@ export interface AuroraFeature {
   dependencies: string[];
 
   install(
-    projectPath: string
+    context: FeatureInstallContext
   ): Promise<void>;
-
 }

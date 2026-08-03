@@ -1,104 +1,146 @@
-import fs from "fs-extra";
-import path from "path";
+﻿import fs from "node:fs/promises";
+import path from "node:path";
 
-interface FeatureManifest {
+import type {
+  FileTransaction,
+} from "../../core/fileTransaction.js";
 
+export interface FeatureManifest {
   installed: string[];
-
 }
 
-async function manifestPath(
+function getManifestPath(
   projectPath: string
-): Promise<string> {
-
-  const aurora = path.join(
-    projectPath,
-    ".aurora"
-  );
-
-  await fs.ensureDir(aurora);
-
+): string {
   return path.join(
-    aurora,
+    path.resolve(projectPath),
+    ".aurora",
     "features.json"
   );
-
 }
 
 export async function loadManifest(
   projectPath: string
 ): Promise<FeatureManifest> {
-
   const file =
-    await manifestPath(projectPath);
+    getManifestPath(
+      projectPath
+    );
 
-  if (!(await fs.pathExists(file))) {
+  try {
+    const manifest =
+      JSON.parse(
+        await fs.readFile(
+          file,
+          "utf8"
+        )
+      ) as Partial<FeatureManifest>;
+
+    if (
+      !Array.isArray(
+        manifest.installed
+      )
+    ) {
+      throw new Error(
+        `Invalid feature manifest: ${file}`
+      );
+    }
 
     return {
-      installed: [],
+      installed:
+        manifest.installed,
     };
+  } catch (error) {
+    const code =
+      (
+        error as NodeJS.ErrnoException
+      ).code;
 
+    if (code === "ENOENT") {
+      return {
+        installed: [],
+      };
+    }
+
+    throw error;
   }
-
-  return fs.readJson(file);
-
 }
 
 export async function saveManifest(
   projectPath: string,
-  manifest: FeatureManifest
+  manifest: FeatureManifest,
+  transaction?: FileTransaction
 ): Promise<void> {
-
   const file =
-    await manifestPath(projectPath);
+    getManifestPath(
+      projectPath
+    );
 
-  await fs.writeJson(
+  if (transaction) {
+    await transaction
+      .recordModifiedFile(file);
+
+    await transaction
+      .ensureDirectory(
+        path.dirname(file)
+      );
+  } else {
+    await fs.mkdir(
+      path.dirname(file),
+      {
+        recursive: true,
+      }
+    );
+  }
+
+  await fs.writeFile(
     file,
-    manifest,
-    {
-      spaces: 2,
-    }
+    JSON.stringify(
+      manifest,
+      null,
+      2
+    ) + "\n",
+    "utf8"
   );
-
 }
 
 export async function isInstalled(
   projectPath: string,
   featureId: string
 ): Promise<boolean> {
-
   const manifest =
-    await loadManifest(projectPath);
+    await loadManifest(
+      projectPath
+    );
 
   return manifest.installed.includes(
     featureId
   );
-
 }
 
 export async function addInstalledFeature(
   projectPath: string,
-  featureId: string
+  featureId: string,
+  transaction?: FileTransaction
 ): Promise<void> {
-
   const manifest =
-    await loadManifest(projectPath);
+    await loadManifest(
+      projectPath
+    );
 
   if (
     !manifest.installed.includes(
       featureId
     )
   ) {
-
     manifest.installed.push(
       featureId
     );
-
   }
 
   await saveManifest(
     projectPath,
-    manifest
+    manifest,
+    transaction
   );
-
 }

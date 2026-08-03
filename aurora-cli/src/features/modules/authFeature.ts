@@ -1,11 +1,12 @@
-import fs from "fs-extra";
-import path from "path";
+﻿import type {
+  AuroraFeature,
+} from "../feature.js";
 
-import { AuroraFeature } from "../feature.js";
-import { registerFeature } from "../registry/featureRegistry.js";
+import {
+  registerFeature,
+} from "../registry/featureRegistry.js";
 
 const authFeature: AuroraFeature = {
-
   id: "auth",
 
   displayName: "Authentication",
@@ -16,43 +17,24 @@ const authFeature: AuroraFeature = {
   version: "1.0.0",
 
   dependencies: [
-    "next-auth"
+    "next-auth",
   ],
 
   async install(
-    projectPath: string
+    context
   ): Promise<void> {
-
-    const auroraFolder = path.join(
-      projectPath,
-      ".aurora"
-    );
-
-    await fs.ensureDir(
-      auroraFolder
-    );
-
-    await fs.writeFile(
-      path.join(
-        auroraFolder,
-        "auth.json"
-      ),
-      JSON.stringify(
-        {
-          provider: "next-auth",
-          installed: true,
-        },
-        null,
-        2
-      )
+    await context.writeJson(
+      ".aurora/auth.json",
+      {
+        provider: "next-auth",
+        installed: true,
+      }
     );
 
     console.log(
       "Authentication feature configured."
     );
-
-  }
-
+  },
 };
 
 registerFeature(authFeature);
