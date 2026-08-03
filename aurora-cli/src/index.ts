@@ -18,8 +18,6 @@ import "./commands/recoveryRegistration.js";
 
 import "./features/modules/authFeature.js";
 import "./templates/registerNext.js";
-import "./container/bootstrap/containerBootstrap.js";
-import "./container/examples/testContainer.js";
 
 import { registerAllCommands } from "./core/commandRegistry.js";
 
@@ -34,6 +32,8 @@ import { RecoveryService } from "./packages/recovery/recoveryService.js";
 
 import { KernelBuilder } from "./kernel/kernelBuilder.js";
 import { RuntimeKernelService } from "./runtime/runtimeKernelService.js";
+import { PluginLoader } from "./runtime/pluginLoader.js";
+import { RuntimeManager } from "./runtime/runtimeManager.js";
 
 import { container } from "./container/bootstrap/containerBootstrap.js";
 
@@ -62,10 +62,25 @@ async function main(): Promise<void> {
 
   await discoverManifests();
 
+  const pluginLoader =
+    container.resolve<PluginLoader>(
+      "PluginLoader"
+    );
+
+  const runtimeManager =
+    container.resolve<RuntimeManager>(
+      "RuntimeManager"
+    );
+
   const kernel = new KernelBuilder()
     .withWorkspace(process.cwd())
     .withProjectName("Aurora CLI")
-    .addService(new RuntimeKernelService())
+    .addService(
+      new RuntimeKernelService(
+        pluginLoader,
+        runtimeManager
+      )
+    )
     .build();
 
   let operationError: unknown;
@@ -151,5 +166,6 @@ try {
 } catch (error) {
   handleFatalError(error);
 }
+
 
 

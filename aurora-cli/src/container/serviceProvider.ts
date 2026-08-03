@@ -1,64 +1,77 @@
-import type { ServiceDescriptor } from "./serviceDescriptor.js";
+﻿import type {
+  ServiceDescriptor,
+} from "./serviceDescriptor.js";
 
+import {
+  ServiceLifetime,
+} from "./lifetime.js";
 
 export class ServiceProvider {
-
-  private instances =
+  private readonly instances =
     new Map<string, unknown>();
 
-
   constructor(
-    private descriptors:
-      Map<string, ServiceDescriptor>
+    private readonly descriptors:
+      ReadonlyMap<
+        string,
+        ServiceDescriptor
+      >
   ) {}
 
-
+  has(token: string): boolean {
+    return this.descriptors.has(
+      token.trim()
+    );
+  }
 
   resolve<T>(
     token: string
   ): T {
+    const normalizedToken =
+      token.trim();
 
+    if (!normalizedToken) {
+      throw new Error(
+        "Service token cannot be empty."
+      );
+    }
 
     const descriptor =
-      this.descriptors.get(token);
-
-
-    if (!descriptor) {
-
-      throw new Error(
-        `Service not registered: ${token}`
+      this.descriptors.get(
+        normalizedToken
       );
 
+    if (!descriptor) {
+      throw new Error(
+        `Service not registered: ${normalizedToken}`
+      );
     }
 
+    const isSingleton =
+      descriptor.lifetime ===
+      ServiceLifetime.Singleton;
 
-
-    const existing =
-      this.instances.get(token);
-
-
-
-    if (existing) {
-
-      return existing as T;
-
+    if (
+      isSingleton &&
+      this.instances.has(
+        normalizedToken
+      )
+    ) {
+      return this.instances.get(
+        normalizedToken
+      ) as T;
     }
-
-
 
     const instance =
       new descriptor.implementation();
 
-
-
-    this.instances.set(
-      token,
-      instance
-    );
-
+    if (isSingleton) {
+      this.instances.set(
+        normalizedToken,
+        instance
+      );
+    }
 
     return instance as T;
-
   }
-
 }
