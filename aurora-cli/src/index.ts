@@ -70,6 +70,10 @@ import {
   formatFatalError,
 } from "./errors/formatError.js";
 
+import {
+  AURORA_CLI_VERSION,
+} from "./core/packageMetadata.js";
+
 const program =
   new Command();
 
@@ -78,7 +82,7 @@ program
   .description(
     "Aurora Command Line Interface"
   )
-  .version("0.1.0");
+  .version(AURORA_CLI_VERSION);
 
 program.exitOverride();
 

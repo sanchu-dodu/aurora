@@ -1,3 +1,6 @@
+import {
+  AURORA_CLI_METADATA,
+} from "../../dist/core/packageMetadata.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -143,9 +146,19 @@ test(
       null
     );
 
-    assert.match(
-      result.stdout,
-      /0\.1\.0/
+    const outputLines =
+      result.stdout
+        .split(/\r?\n/)
+        .map(
+          (line) =>
+            line.trim()
+        );
+
+    assert.ok(
+      outputLines.includes(
+        AURORA_CLI_METADATA.version
+      ),
+      `Expected --version output to contain '${AURORA_CLI_METADATA.version}'.`
     );
   }
 );
