@@ -1,10 +1,19 @@
 ﻿import type { AuroraPlugin } from "./plugins/plugin.js";
 import { getPlugins } from "./plugins/pluginRegistry.js";
 
+export type PluginProvider =
+  () => AuroraPlugin[];
+
 export class PluginRunner {
-  private readonly activatedPlugins: AuroraPlugin[] = [];
+  private readonly activatedPlugins:
+    AuroraPlugin[] = [];
 
   private started = false;
+
+  constructor(
+    private readonly pluginProvider:
+      PluginProvider = getPlugins
+  ) {}
 
   get isStarted(): boolean {
     return this.started;
@@ -18,15 +27,20 @@ export class PluginRunner {
     console.log("");
     console.log("Starting Aurora Runtime...");
 
-    const plugins = getPlugins();
+    const plugins =
+      this.pluginProvider();
 
     try {
       for (const plugin of plugins) {
-        console.log(`Loading ${plugin.name}...`);
+        console.log(
+          `Loading ${plugin.name}...`
+        );
 
         await plugin.activate();
 
-        this.activatedPlugins.push(plugin);
+        this.activatedPlugins.push(
+          plugin
+        );
       }
 
       this.started = true;
@@ -53,14 +67,18 @@ export class PluginRunner {
     const errors: unknown[] = [];
 
     for (
-      let index = this.activatedPlugins.length - 1;
+      let index =
+        this.activatedPlugins.length - 1;
       index >= 0;
       index -= 1
     ) {
-      const plugin = this.activatedPlugins[index];
+      const plugin =
+        this.activatedPlugins[index];
 
       try {
-        console.log(`Stopping ${plugin.name}...`);
+        console.log(
+          `Stopping ${plugin.name}...`
+        );
 
         await plugin.deactivate();
       } catch (error) {
@@ -79,16 +97,20 @@ export class PluginRunner {
     }
   }
 
-  private async rollbackActivatedPlugins(): Promise<void> {
+  private async rollbackActivatedPlugins():
+    Promise<void> {
     for (
-      let index = this.activatedPlugins.length - 1;
+      let index =
+        this.activatedPlugins.length - 1;
       index >= 0;
       index -= 1
     ) {
       try {
-        await this.activatedPlugins[index].deactivate();
+        await this.activatedPlugins[
+          index
+        ].deactivate();
       } catch {
-        // Preserve the original plugin activation error.
+        // Preserve the original activation error.
       }
     }
 
