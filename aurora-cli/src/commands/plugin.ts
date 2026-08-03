@@ -1,11 +1,13 @@
-import { getLoadedPlugins } from "../core/pluginLoader.js";
+﻿import {
+  getPlugins,
+} from "../runtime/plugins/pluginRegistry.js";
 
 export async function pluginListCommand(): Promise<void> {
   console.log("");
   console.log("Installed Plugins");
   console.log("=================");
 
-  const plugins = getLoadedPlugins();
+  const plugins = getPlugins();
 
   if (plugins.length === 0) {
     console.log("No plugins installed.");
@@ -13,6 +15,8 @@ export async function pluginListCommand(): Promise<void> {
   }
 
   for (const plugin of plugins) {
-    console.log(`✅ ${plugin.name}`);
+    console.log(
+      `✔ ${plugin.name} (${plugin.version})`
+    );
   }
 }

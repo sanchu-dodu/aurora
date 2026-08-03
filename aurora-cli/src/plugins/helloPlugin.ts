@@ -1,6 +1,6 @@
-import {
+﻿import {
   registerPlugin,
-} from "../core/pluginRegistry.js";
+} from "../runtime/plugins/pluginRegistry.js";
 
 registerPlugin({
   id: "hello",
@@ -9,7 +9,15 @@ registerPlugin({
 
   version: "1.0.0",
 
-  async initialize() {
-    console.log("✅ Hello Plugin loaded.");
+  async activate() {
+    console.log(
+      "✔ Hello Plugin activated."
+    );
+  },
+
+  async deactivate() {
+    console.log(
+      "Hello Plugin stopped."
+    );
   },
 });

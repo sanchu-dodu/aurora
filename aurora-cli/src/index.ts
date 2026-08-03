@@ -23,9 +23,7 @@ import "./container/bootstrap/containerBootstrap.js";
 import "./container/examples/testContainer.js";
 
 import { registerAllCommands } from "./core/commandRegistry.js";
-import { initializePlugins } from "./core/pluginLoader.js";
 
-import { discoverPlugins } from "./discovery/pluginDiscovery.js";
 import { discoverTemplates } from "./templates/registry/templateRegistry.js";
 
 import { discoverPackages } from "./packages/discovery/packageDiscovery.js";
@@ -57,9 +55,6 @@ async function main(): Promise<void> {
   showBanner();
 
   registerAllCommands(program);
-
-  await discoverPlugins();
-  await initializePlugins();
 
   await discoverTemplates();
   await discoverPackages();
@@ -157,3 +152,4 @@ try {
 } catch (error) {
   handleFatalError(error);
 }
+
