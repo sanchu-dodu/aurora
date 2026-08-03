@@ -1,4 +1,4 @@
-import { Command } from "commander";
+﻿import { Command } from "commander";
 
 import { registerCommand } from "../core/commandRegistry.js";
 
@@ -10,6 +10,7 @@ import {
 
 
 registerCommand({
+  id: "config",
   register(program: Command): void {
 
     program

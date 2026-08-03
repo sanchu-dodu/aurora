@@ -1,9 +1,10 @@
-import { Command } from "commander";
+﻿import { Command } from "commander";
 
 import { registerCommand } from "../core/commandRegistry.js";
 import { initCommand } from "./init.js";
 
 registerCommand({
+  id: "init",
   register(program: Command) {
     program
       .command("init")

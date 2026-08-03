@@ -1,4 +1,4 @@
-import { Command } from "commander";
+﻿import { Command } from "commander";
 
 import { registerCommand } from "../core/commandRegistry.js";
 
@@ -18,6 +18,7 @@ import {
 } from "../packages/packageCommand.js";
 
 registerCommand({
+  id: "package",
 
   register(program: Command): void {
 
@@ -187,3 +188,4 @@ registerCommand({
   },
 
 });
+

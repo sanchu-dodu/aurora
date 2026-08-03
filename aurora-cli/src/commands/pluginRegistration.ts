@@ -1,10 +1,11 @@
-import { Command } from "commander";
+﻿import { Command } from "commander";
 
 import { registerCommand } from "../core/commandRegistry.js";
 import { pluginListCommand } from "./plugin.js";
 
 
 registerCommand({
+  id: "plugin",
   register(program: Command): void {
 
 
