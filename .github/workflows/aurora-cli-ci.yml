@@ -1,0 +1,62 @@
+name: Aurora CLI CI
+
+on:
+  push:
+    paths:
+      - "aurora-cli/**"
+      - ".github/workflows/aurora-cli-ci.yml"
+
+  pull_request:
+    paths:
+      - "aurora-cli/**"
+      - ".github/workflows/aurora-cli-ci.yml"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aurora-cli-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Node.js ${{ matrix.node }}
+
+    runs-on: ${{ matrix.os }}
+
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+
+        node:
+          - 22
+          - 24
+
+    defaults:
+      run:
+        working-directory: aurora-cli
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: aurora-cli/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run build, tests, and package checks
+        run: npm test
