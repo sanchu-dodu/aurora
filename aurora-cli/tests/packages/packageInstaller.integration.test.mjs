@@ -351,3 +351,216 @@ export async function afterInstall() {
     );
   }
 );
+
+test(
+  "PackageInstaller restores pre-existing files and metadata after failure",
+  async () => {
+    await withTemporaryProject(
+      async ({ root }) => {
+        const originalAuthFile =
+          "export const originalAuth = true;\n";
+
+        const originalCache = {
+          legacy: {
+            version: "9.9.9",
+            installedAt:
+              "2026-01-01T00:00:00.000Z",
+            checksum: "original-checksum",
+            verified: true,
+          },
+        };
+
+        const originalLock = {
+          packages: {
+            legacy: "9.9.9",
+          },
+        };
+
+        await mkdir(
+          join(root, "src"),
+          {
+            recursive: true,
+          }
+        );
+
+        await mkdir(
+          join(root, ".aurora"),
+          {
+            recursive: true,
+          }
+        );
+
+        await writeFile(
+          join(root, "src", "auth.ts"),
+          originalAuthFile,
+          "utf8"
+        );
+
+        await writeFile(
+          join(
+            root,
+            ".aurora",
+            "cache.json"
+          ),
+          JSON.stringify(
+            originalCache,
+            null,
+            2
+          ),
+          "utf8"
+        );
+
+        await writeFile(
+          join(root, "aurora.lock"),
+          JSON.stringify(
+            originalLock,
+            null,
+            2
+          ),
+          "utf8"
+        );
+
+        const brokenPackageDirectory =
+          join(
+            root,
+            "packages",
+            "existing-state-failure"
+          );
+
+        await mkdir(
+          join(
+            brokenPackageDirectory,
+            "hooks"
+          ),
+          {
+            recursive: true,
+          }
+        );
+
+        await mkdir(
+          join(
+            brokenPackageDirectory,
+            "templates"
+          ),
+          {
+            recursive: true,
+          }
+        );
+
+        await writeFile(
+          join(
+            brokenPackageDirectory,
+            "manifest.json"
+          ),
+          JSON.stringify(
+            {
+              id: "existing-state-failure",
+              name: "Existing state failure package",
+              version: "1.0.0",
+              dependencies: ["auth"],
+            },
+            null,
+            2
+          ),
+          "utf8"
+        );
+
+        await writeFile(
+          join(
+            brokenPackageDirectory,
+            "install.js"
+          ),
+          `
+export async function install(context) {
+  context.log("Preparing existing-state failure...");
+}
+`,
+          "utf8"
+        );
+
+        await writeFile(
+          join(
+            brokenPackageDirectory,
+            "templates",
+            "temporary.txt.template"
+          ),
+          "This file must not survive rollback.\n",
+          "utf8"
+        );
+
+        await writeFile(
+          join(
+            brokenPackageDirectory,
+            "hooks",
+            "hooks.js"
+          ),
+          `
+export async function afterInstall() {
+  throw new Error("Expected existing-state failure");
+}
+`,
+          "utf8"
+        );
+
+        const installer =
+          new PackageInstaller();
+
+        await assert.rejects(
+          installer.install(
+            "existing-state-failure"
+          ),
+          /Expected existing-state failure/
+        );
+
+        assert.equal(
+          await readFile(
+            join(root, "src", "auth.ts"),
+            "utf8"
+          ),
+          originalAuthFile
+        );
+
+        const restoredCache =
+          JSON.parse(
+            await readFile(
+              join(
+                root,
+                ".aurora",
+                "cache.json"
+              ),
+              "utf8"
+            )
+          );
+
+        const restoredLock =
+          JSON.parse(
+            await readFile(
+              join(root, "aurora.lock"),
+              "utf8"
+            )
+          );
+
+        assert.deepEqual(
+          restoredCache,
+          originalCache
+        );
+
+        assert.deepEqual(
+          restoredLock,
+          originalLock
+        );
+
+        assert.equal(
+          await exists(
+            join(
+              root,
+              "src",
+              "temporary.txt"
+            )
+          ),
+          false
+        );
+      }
+    );
+  }
+);
