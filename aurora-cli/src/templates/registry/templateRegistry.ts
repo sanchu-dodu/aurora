@@ -1,97 +1,109 @@
-import fs from "fs-extra";
-import path from "path";
+﻿import fs from "fs-extra";
+import path from "node:path";
 
-import { TemplateMetadata } from "../templateMetadata.js";
+import type {
+  TemplateMetadata,
+} from "../templateMetadata.js";
+
+import {
+  getDefaultGeneratorTemplateRoot,
+} from "../templatePaths.js";
 
 const templates =
-  new Map<
-    string,
-    TemplateMetadata
-  >();
+  new Map<string, TemplateMetadata>();
 
-export async function discoverTemplates(): Promise<void> {
-
+export async function discoverTemplates(
+  templateRoot =
+    getDefaultGeneratorTemplateRoot()
+): Promise<void> {
   templates.clear();
 
-  const root =
-    path.join(
-      process.cwd(),
-      "src",
-      "templates"
+  if (
+    !(await fs.pathExists(templateRoot))
+  ) {
+    throw new Error(
+      `Generator template root not found: ${templateRoot}`
     );
+  }
 
-  await scan(root);
-
+  await scan(templateRoot);
 }
 
 async function scan(
   directory: string
 ): Promise<void> {
-
-  const entries =
-    await fs.readdir(
-      directory,
-      {
-        withFileTypes: true,
-      }
-    );
+  const entries = await fs.readdir(
+    directory,
+    {
+      withFileTypes: true,
+    }
+  );
 
   for (const entry of entries) {
-
-    const full =
-      path.join(
-        directory,
-        entry.name
-      );
+    const fullPath = path.join(
+      directory,
+      entry.name
+    );
 
     if (entry.isDirectory()) {
-
-      await scan(full);
-
+      await scan(fullPath);
       continue;
-
     }
 
-    if (!entry.name.endsWith(".json")) {
-
+    if (
+      !entry.name.endsWith(".json")
+    ) {
       continue;
-
     }
 
     const metadata =
-      await fs.readJson(full);
+      await fs.readJson(
+        fullPath
+      ) as TemplateMetadata;
+
+    const templateId =
+      metadata.id?.trim();
+
+    if (!templateId) {
+      throw new Error(
+        `Generator metadata at '${fullPath}' has no identifier.`
+      );
+    }
+
+    if (templates.has(templateId)) {
+      throw new Error(
+        `Generator template '${templateId}' is already registered.`
+      );
+    }
 
     templates.set(
-      metadata.id,
+      templateId,
       metadata
     );
-
   }
-
 }
 
 export function getTemplate(
   id: string
 ): TemplateMetadata {
-
   const template =
     templates.get(id);
 
   if (!template) {
-
     throw new Error(
       `Unknown template: ${id}`
     );
-
   }
 
   return template;
-
 }
-export function listTemplates(): TemplateMetadata[] {
 
+export function listTemplates():
+  TemplateMetadata[] {
   return [
-    ...templates.values()
-  ];
-
+    ...templates.values(),
+  ].sort(
+    (left, right) =>
+      left.id.localeCompare(right.id)
+  );
 }
