@@ -17,7 +17,6 @@ import "./commands/packageRegistration.js";
 import "./commands/recoveryRegistration.js";
 
 import "./features/modules/authFeature.js";
-import "./hooks/defaultHooks.js";
 import "./templates/registerNext.js";
 import "./container/bootstrap/containerBootstrap.js";
 import "./container/examples/testContainer.js";
@@ -152,4 +151,5 @@ try {
 } catch (error) {
   handleFatalError(error);
 }
+
 
