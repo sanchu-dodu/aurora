@@ -1,35 +1,79 @@
-import fs from "fs-extra";
-import path from "path";
+﻿import fs from "fs-extra";
+import path from "node:path";
 
-import type { ProjectConfig } from "../types/project.js";
+import type {
+  ProjectConfig,
+} from "../types/project.js";
 
-import { getTemplateDirectory } from "../engine/registry.js";
-import { replaceVariables } from "../engine/variables.js";
-import { walkDirectory } from "./walker.js";
-import { loadTemplateManifest } from "./manifest.js";
-import { shouldGenerateFile } from "../engine/filter.js";
-import { validateTemplate } from "../engine/templateValidator.js";
+import {
+  getTemplateDirectory,
+} from "../engine/registry.js";
+
+import {
+  replaceVariables,
+} from "../engine/variables.js";
+
+import {
+  shouldGenerateFile,
+} from "../engine/filter.js";
+
+import {
+  validateTemplate,
+} from "../engine/templateValidator.js";
+
+import {
+  getDefaultProjectTemplateRoot,
+  resolvePathWithinRoot,
+} from "../templates/projectTemplatePaths.js";
+
+import {
+  loadTemplateManifest,
+} from "./manifest.js";
+
+import {
+  walkDirectory,
+} from "./walker.js";
 
 export async function copyTemplate(
   projectPath: string,
-  config: ProjectConfig
+  config: ProjectConfig,
+  templateRoot =
+    getDefaultProjectTemplateRoot()
 ): Promise<void> {
-  const templateDirectory = getTemplateDirectory(config);
+  const projectRoot =
+    path.resolve(projectPath);
 
-  const manifest = await loadTemplateManifest(templateDirectory);
+  const templateDirectory =
+    getTemplateDirectory(config);
 
+  const templatePath =
+    resolvePathWithinRoot(
+      templateRoot,
+      templateDirectory
+    );
 
+  const manifest =
+    await loadTemplateManifest(
+      templateDirectory,
+      templateRoot
+    );
 
   if (
-  manifest.framework.toLowerCase() !==
-  config.framework.toLowerCase()
-) {
+    manifest.framework
+      .toLowerCase() !==
+    config.framework
+      .toLowerCase()
+  ) {
     throw new Error(
       `Template '${manifest.displayName}' does not support framework '${config.framework}'.`
     );
   }
 
-  if (!manifest.language.includes(config.language.toLowerCase())) {
+  if (
+    !manifest.language.includes(
+      config.language.toLowerCase()
+    )
+  ) {
     throw new Error(
       `Language '${config.language}' is not supported by '${manifest.displayName}'.`
     );
@@ -37,7 +81,8 @@ export async function copyTemplate(
 
   if (
     !manifest.packageManagers.includes(
-      config.packageManager.toLowerCase()
+      config.packageManager
+        .toLowerCase()
     )
   ) {
     throw new Error(
@@ -45,38 +90,65 @@ export async function copyTemplate(
     );
   }
 
-  const templatePath = path.join(
-    process.cwd(),
-    "templates",
-    templateDirectory
+  await validateTemplate(
+    templatePath
   );
-await validateTemplate(templatePath);
 
-  const files = await walkDirectory(templatePath);
+  const files =
+    await walkDirectory(
+      templatePath
+    );
 
   for (const source of files) {
-    const relativePath = path.relative(templatePath, source);
+    const relativePath =
+      path.relative(
+        templatePath,
+        source
+      );
 
-if (!shouldGenerateFile(relativePath, config)) {
-  continue;
-}
+    if (
+      !shouldGenerateFile(
+        relativePath,
+        config
+      )
+    ) {
+      continue;
+    }
 
-const processedRelativePath = replaceVariables(
-  relativePath,
-  config
-);
+    const processedRelativePath =
+      replaceVariables(
+        relativePath,
+        config
+      );
 
-const destination = path.join(
-  projectPath,
-  processedRelativePath
-);
+    const destination =
+      resolvePathWithinRoot(
+        projectRoot,
+        processedRelativePath
+      );
 
-    await fs.ensureDir(path.dirname(destination));
+    await fs.ensureDir(
+      path.dirname(
+        destination
+      )
+    );
 
-    let content = await fs.readFile(source, "utf8");
+    let content =
+      await fs.readFile(
+        source,
+        "utf8"
+      );
 
-    content = replaceVariables(content, config);
+    content =
+      replaceVariables(
+        content,
+        config
+      );
 
-    await fs.writeFile(destination, content);
+    await fs.writeFile(
+      destination,
+      content,
+      "utf8"
+    );
   }
 }

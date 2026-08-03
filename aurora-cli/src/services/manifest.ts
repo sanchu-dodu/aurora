@@ -1,25 +1,43 @@
-import fs from "fs-extra";
-import path from "path";
+﻿import fs from "fs-extra";
+import path from "node:path";
 
-import type { TemplateManifest } from "../types/template.js";
+import type {
+  TemplateManifest,
+} from "../types/template.js";
+
+import {
+  getDefaultProjectTemplateRoot,
+  resolvePathWithinRoot,
+} from "../templates/projectTemplatePaths.js";
 
 export async function loadTemplateManifest(
-  templateDirectory: string
+  templateDirectory: string,
+  templateRoot =
+    getDefaultProjectTemplateRoot()
 ): Promise<TemplateManifest> {
-  const manifestPath = path.join(
-    process.cwd(),
-    "templates",
-    templateDirectory,
-    "template.json"
-  );
+  const templatePath =
+    resolvePathWithinRoot(
+      templateRoot,
+      templateDirectory
+    );
 
-  const exists = await fs.pathExists(manifestPath);
+  const manifestPath =
+    path.join(
+      templatePath,
+      "template.json"
+    );
 
-  if (!exists) {
+  if (
+    !(await fs.pathExists(
+      manifestPath
+    ))
+  ) {
     throw new Error(
       `Template manifest not found: ${manifestPath}`
     );
   }
 
-  return fs.readJson(manifestPath);
+  return fs.readJson(
+    manifestPath
+  );
 }

@@ -1,23 +1,55 @@
-import fs from "fs-extra";
-import path from "path";
+﻿import fs from "fs-extra";
+import path from "node:path";
 
-export async function discoverTemplates(): Promise<string[]> {
-  const templatesRoot = path.join(
-    process.cwd(),
-    "templates"
-  );
+import {
+  getDefaultProjectTemplateRoot,
+} from "../templates/projectTemplatePaths.js";
 
-  const entries = await fs.readdir(templatesRoot);
+export async function discoverTemplates(
+  templateRoot =
+    getDefaultProjectTemplateRoot()
+): Promise<string[]> {
+  if (
+    !(await fs.pathExists(
+      templateRoot
+    ))
+  ) {
+    throw new Error(
+      `Project template root not found: ${templateRoot}`
+    );
+  }
 
-  const templates: string[] = [];
+  const entries =
+    await fs.readdir(
+      templateRoot,
+      {
+        withFileTypes: true,
+      }
+    );
+
+  const templates:
+    string[] = [];
 
   for (const entry of entries) {
-    const fullPath = path.join(templatesRoot, entry);
+    if (!entry.isDirectory()) {
+      continue;
+    }
 
-    const stat = await fs.stat(fullPath);
+    const manifestPath =
+      path.join(
+        templateRoot,
+        entry.name,
+        "template.json"
+      );
 
-    if (stat.isDirectory()) {
-      templates.push(entry);
+    if (
+      await fs.pathExists(
+        manifestPath
+      )
+    ) {
+      templates.push(
+        entry.name
+      );
     }
   }
 

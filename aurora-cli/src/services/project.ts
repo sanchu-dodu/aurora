@@ -1,59 +1,165 @@
-import fs from "fs-extra";
-import path from "path";
+﻿import fs from "fs-extra";
+import path from "node:path";
 
-import { createProjectStructure } from "./filesystem.js";
-import { createPackageJson } from "./package.js";
-import { createTsConfig } from "./tsconfig.js";
-import { createReadme } from "./template.js";
-import { copyTemplate } from "./templateEngine.js";
-import { installDependencies } from "./installer.js";
-import { initializeGit } from "./git.js";
+import type {
+  ProjectConfig,
+} from "../types/project.js";
 
-import type { ProjectConfig } from "../types/project.js";
+import {
+  getDefaultProjectTemplateRoot,
+  resolvePathWithinRoot,
+} from "../templates/projectTemplatePaths.js";
+
+import {
+  copyTemplate,
+} from "./templateEngine.js";
+
+import {
+  installDependencies,
+} from "./installer.js";
+
+import {
+  initializeGit,
+} from "./git.js";
+
+export interface ProjectCreationOptions {
+  workspaceRoot?: string;
+
+  templateRoot?: string;
+
+  dependencyInstaller?:
+    typeof installDependencies;
+
+  gitInitializer?:
+    typeof initializeGit;
+}
 
 export async function createProject(
-  config: ProjectConfig
-): Promise<void> {
-  const projectPath = path.join(process.cwd(), config.projectName);
-
-  // Create the project directory
-  await fs.ensureDir(projectPath);
-
-  // Create folder structure
-  await createProjectStructure(projectPath);
-  
-  // Copy template files
-await copyTemplate(projectPath, config);
-
-  // Create package.json
-  await createPackageJson(projectPath, config);
-
-  // Create tsconfig.json
-  await createTsConfig(projectPath);
-
-  // Create README.md
-  await createReadme(projectPath, config);
-
-    // Create aurora.config.json
-  await fs.writeJson(
-    path.join(projectPath, "aurora.config.json"),
-    config,
-    {
-      spaces: 2,
-    }
+  config: ProjectConfig,
+  options:
+    ProjectCreationOptions = {}
+): Promise<string> {
+  validateProjectName(
+    config.projectName
   );
 
-  if (config.installDependencies) {
-    await installDependencies(
-      projectPath,
-      config.packageManager
+  const workspaceRoot =
+    path.resolve(
+      options.workspaceRoot ??
+      process.cwd()
+    );
+
+  const projectPath =
+    resolvePathWithinRoot(
+      workspaceRoot,
+      config.projectName
+    );
+
+  if (
+    await fs.pathExists(
+      projectPath
+    )
+  ) {
+    throw new Error(
+      `Project '${config.projectName}' already exists.`
     );
   }
 
-  if (config.initializeGit) {
-    await initializeGit(projectPath);
-  }
+  const templateRoot =
+    options.templateRoot ??
+    getDefaultProjectTemplateRoot();
 
-  console.log("");
-  console.log(`✅ Project created at: ${projectPath}`);
+  const dependencyInstaller =
+    options.dependencyInstaller ??
+    installDependencies;
+
+  const gitInitializer =
+    options.gitInitializer ??
+    initializeGit;
+
+  await fs.ensureDir(
+    projectPath
+  );
+
+  try {
+    await copyTemplate(
+      projectPath,
+      config,
+      templateRoot
+    );
+
+    await fs.writeJson(
+      path.join(
+        projectPath,
+        "aurora.config.json"
+      ),
+      config,
+      {
+        spaces: 2,
+      }
+    );
+
+    if (
+      config.installDependencies
+    ) {
+      await dependencyInstaller(
+        projectPath,
+        config.packageManager
+      );
+    }
+
+    if (
+      config.initializeGit
+    ) {
+      await gitInitializer(
+        projectPath
+      );
+    }
+
+    console.log("");
+    console.log(
+      `✅ Project created at: ${projectPath}`
+    );
+
+    return projectPath;
+  } catch (error) {
+    await fs.remove(
+      projectPath
+    );
+
+    console.log("");
+    console.log(
+      "Removed partially created project."
+    );
+
+    throw error;
+  }
+}
+
+function validateProjectName(
+  projectName: string
+): void {
+  const normalized =
+    projectName.trim();
+
+  const validName =
+    /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+      .test(normalized);
+
+  const reservedWindowsNames =
+    /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+  if (
+    !validName ||
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.endsWith(".") ||
+    reservedWindowsNames.test(
+      normalized
+    )
+  ) {
+    throw new Error(
+      `Invalid project name '${projectName}'. Use letters, numbers, periods, underscores, or hyphens without path separators.`
+    );
+  }
 }
