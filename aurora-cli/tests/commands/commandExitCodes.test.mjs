@@ -191,6 +191,11 @@ test(
       result.stderr,
       /Template '__missing_template__' not found/
     );
+
+    assert.match(
+      result.stderr,
+      /Code: TEMPLATE_NOT_FOUND/
+    );
   }
 );
 
@@ -225,6 +230,11 @@ test(
       assert.match(
         result.stderr,
         /Template '__missing_template__' not found/
+      );
+
+      assert.match(
+        result.stderr,
+        /Code: TEMPLATE_NOT_FOUND/
       );
 
       assert.equal(
@@ -266,6 +276,11 @@ test(
       result.stderr,
       /Unknown plugin action '__unknown_action__'/
     );
+
+    assert.match(
+      result.stderr,
+      /Code: UNKNOWN_PLUGIN_ACTION/
+    );
   }
 );
 
@@ -299,6 +314,11 @@ test(
       assert.match(
         result.stderr,
         /Unknown configuration key '__unknown_key__'/
+      );
+
+      assert.match(
+        result.stderr,
+        /Code: UNKNOWN_CONFIGURATION_KEY/
       );
     } finally {
       await rm(

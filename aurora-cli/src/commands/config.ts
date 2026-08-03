@@ -1,4 +1,11 @@
 import {
+  AuroraError,
+} from "../errors/AuroraError.js";
+
+import {
+  ErrorCodes,
+} from "../errors/errorCodes.js";
+import {
   loadConfig,
   saveConfig,
 } from "../config/configManager.js";
@@ -24,8 +31,16 @@ export async function configGetCommand(
   const config = await loadConfig();
 
   if (!(key in config)) {
-    throw new Error(
-      `Unknown configuration key '${key}'.`
+    throw new AuroraError(
+      `Unknown configuration key '${key}'.`,
+      {
+        code:
+          ErrorCodes
+            .UNKNOWN_CONFIGURATION_KEY,
+
+        suggestion:
+          "Run 'aurora config list' to view supported configuration keys.",
+      }
     );
   }
 
@@ -43,8 +58,16 @@ export async function configSetCommand(
   const config = await loadConfig();
 
   if (!(key in config)) {
-    throw new Error(
-      `Unknown configuration key '${key}'.`
+    throw new AuroraError(
+      `Unknown configuration key '${key}'.`,
+      {
+        code:
+          ErrorCodes
+            .UNKNOWN_CONFIGURATION_KEY,
+
+        suggestion:
+          "Run 'aurora config list' to view supported configuration keys.",
+      }
     );
   }
 

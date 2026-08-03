@@ -1,5 +1,13 @@
 import path from "node:path";
 
+import {
+  AuroraError,
+} from "../errors/AuroraError.js";
+
+import {
+  ErrorCodes,
+} from "../errors/errorCodes.js";
+
 import type {
   ProjectConfig,
 } from "../types/project.js";
@@ -42,8 +50,16 @@ export async function installProject(
     );
 
   if (!template) {
-    throw new Error(
-      `Template '${templateId}' not found.`
+    throw new AuroraError(
+      `Template '${templateId}' not found.`,
+      {
+        code:
+          ErrorCodes
+            .TEMPLATE_NOT_FOUND,
+
+        suggestion:
+          "Run 'aurora template search <query>' to discover available templates.",
+      }
     );
   }
 

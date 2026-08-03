@@ -7,6 +7,14 @@ import {
 } from "../core/commandRegistry.js";
 
 import {
+  AuroraError,
+} from "../errors/AuroraError.js";
+
+import {
+  ErrorCodes,
+} from "../errors/errorCodes.js";
+
+import {
   pluginListCommand,
 } from "./plugin.js";
 
@@ -32,8 +40,16 @@ registerCommand({
               break;
 
             default:
-              throw new Error(
-                `Unknown plugin action '${action}'. Supported action: list.`
+              throw new AuroraError(
+                `Unknown plugin action '${action}'.`,
+                {
+                  code:
+                    ErrorCodes
+                      .UNKNOWN_PLUGIN_ACTION,
+
+                  suggestion:
+                    "Supported plugin action: list.",
+                }
               );
           }
         }

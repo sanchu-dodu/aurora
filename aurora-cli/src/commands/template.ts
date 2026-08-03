@@ -7,6 +7,14 @@ import {
   installProject,
 } from "../services/installService.js";
 
+import {
+  AuroraError,
+} from "../errors/AuroraError.js";
+
+import {
+  ErrorCodes,
+} from "../errors/errorCodes.js";
+
 export async function templateInfoCommand(
   id: string
 ): Promise<void> {
@@ -14,14 +22,26 @@ export async function templateInfoCommand(
     await getTemplateById(id);
 
   if (!template) {
-    throw new Error(
-      `Template '${id}' not found.`
+    throw new AuroraError(
+      `Template '${id}' not found.`,
+      {
+        code:
+          ErrorCodes
+            .TEMPLATE_NOT_FOUND,
+
+        suggestion:
+          "Run 'aurora template search <query>' to discover available templates.",
+      }
     );
   }
 
   console.log("");
-  console.log("Template Information");
-  console.log("====================");
+  console.log(
+    "Template Information"
+  );
+  console.log(
+    "===================="
+  );
   console.log("");
 
   console.log(
@@ -60,10 +80,16 @@ export async function templateSearchCommand(
     await searchTemplates(query);
 
   console.log("");
-  console.log("Search Results");
-  console.log("==============");
+  console.log(
+    "Search Results"
+  );
+  console.log(
+    "=============="
+  );
 
-  if (matches.length === 0) {
+  if (
+    matches.length === 0
+  ) {
     console.log(
       "No templates found."
     );
@@ -71,7 +97,10 @@ export async function templateSearchCommand(
     return;
   }
 
-  for (const template of matches) {
+  for (
+    const template
+    of matches
+  ) {
     console.log("");
 
     console.log(
@@ -101,8 +130,12 @@ export async function templateInstallCommand(
   projectName: string
 ): Promise<void> {
   console.log("");
-  console.log("Installing Template");
-  console.log("===================");
+  console.log(
+    "Installing Template"
+  );
+  console.log(
+    "==================="
+  );
 
   await installProject(
     id,

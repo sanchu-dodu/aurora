@@ -4,7 +4,9 @@ import {
   CommanderError,
 } from "commander";
 
-import { showBanner } from "./utils/banner.js";
+import {
+  showBanner,
+} from "./utils/banner.js";
 
 import "./commands/initRegistration.js";
 import "./commands/doctorRegistration.js";
@@ -20,41 +22,79 @@ import "./commands/recoveryRegistration.js";
 import "./features/modules/authFeature.js";
 import "./templates/registerNext.js";
 
-import { registerAllCommands } from "./core/commandRegistry.js";
+import {
+  registerAllCommands,
+} from "./core/commandRegistry.js";
 
-import { discoverTemplates } from "./templates/registry/templateRegistry.js";
+import {
+  discoverTemplates,
+} from "./templates/registry/templateRegistry.js";
 
-import { discoverPackages } from "./packages/discovery/packageDiscovery.js";
-import { discoverManifests } from "./packages/discovery/discoverManifests.js";
+import {
+  discoverPackages,
+} from "./packages/discovery/packageDiscovery.js";
 
-import { registerAllGenerators } from "./generator/registry/registerGenerators.js";
+import {
+  discoverManifests,
+} from "./packages/discovery/discoverManifests.js";
 
-import { RecoveryService } from "./packages/recovery/recoveryService.js";
+import {
+  registerAllGenerators,
+} from "./generator/registry/registerGenerators.js";
 
-import { KernelBuilder } from "./kernel/kernelBuilder.js";
-import { RuntimeKernelService } from "./runtime/runtimeKernelService.js";
-import { PluginLoader } from "./runtime/pluginLoader.js";
-import { RuntimeManager } from "./runtime/runtimeManager.js";
+import {
+  RecoveryService,
+} from "./packages/recovery/recoveryService.js";
 
-import { container } from "./container/bootstrap/containerBootstrap.js";
+import {
+  KernelBuilder,
+} from "./kernel/kernelBuilder.js";
 
-const program = new Command();
+import {
+  RuntimeKernelService,
+} from "./runtime/runtimeKernelService.js";
+
+import {
+  PluginLoader,
+} from "./runtime/pluginLoader.js";
+
+import {
+  RuntimeManager,
+} from "./runtime/runtimeManager.js";
+
+import {
+  container,
+} from "./container/bootstrap/containerBootstrap.js";
+
+import {
+  formatFatalError,
+} from "./errors/formatError.js";
+
+const program =
+  new Command();
 
 program
   .name("aurora")
-  .description("Aurora Command Line Interface")
+  .description(
+    "Aurora Command Line Interface"
+  )
   .version("0.1.0");
 
 program.exitOverride();
 
 program.action(() => {
-  console.log("Aurora CLI started successfully.");
+  console.log(
+    "Aurora CLI started successfully."
+  );
 });
 
-async function main(): Promise<void> {
+async function main():
+  Promise<void> {
   showBanner();
 
-  registerAllCommands(program);
+  registerAllCommands(
+    program
+  );
 
   await discoverTemplates();
   await discoverPackages();
@@ -73,21 +113,28 @@ async function main(): Promise<void> {
       "RuntimeManager"
     );
 
-  const kernel = new KernelBuilder()
-    .withWorkspace(process.cwd())
-    .withProjectName("Aurora CLI")
-    .addService(
-      new RuntimeKernelService(
-        pluginLoader,
-        runtimeManager
+  const kernel =
+    new KernelBuilder()
+      .withWorkspace(
+        process.cwd()
       )
-    )
-    .build();
+      .withProjectName(
+        "Aurora CLI"
+      )
+      .addService(
+        new RuntimeKernelService(
+          pluginLoader,
+          runtimeManager
+        )
+      )
+      .build();
 
-  let operationError: unknown;
+  let operationError:
+    unknown;
 
   try {
     await kernel.boot();
+
     kernel.start();
 
     const recovery =
@@ -97,14 +144,20 @@ async function main(): Promise<void> {
 
     await recovery.check();
 
-    await program.parseAsync(process.argv);
+    await program.parseAsync(
+      process.argv
+    );
   } catch (error) {
-    const isSuccessfulCommanderExit =
-      error instanceof CommanderError &&
+    const successfulCommanderExit =
+      error instanceof
+        CommanderError &&
       error.exitCode === 0;
 
-    if (!isSuccessfulCommanderExit) {
-      operationError = error;
+    if (
+      !successfulCommanderExit
+    ) {
+      operationError =
+        error;
     }
   }
 
@@ -129,35 +182,22 @@ async function main(): Promise<void> {
   }
 }
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
+function handleFatalError(
+  error: unknown
+): void {
+  if (
+    error instanceof
+    CommanderError
+  ) {
+    process.exitCode =
+      error.exitCode;
 
-  return String(error);
-}
-
-function handleFatalError(error: unknown): void {
-  if (error instanceof CommanderError) {
-    process.exitCode = error.exitCode;
     return;
   }
 
-  if (error instanceof AggregateError) {
-    console.error("");
-    console.error("Aurora CLI encountered multiple failures:");
-
-    for (const innerError of error.errors) {
-      console.error(
-        `- ${getErrorMessage(innerError)}`
-      );
-    }
-  } else {
-    console.error("");
-    console.error(
-      `Aurora CLI failed: ${getErrorMessage(error)}`
-    );
-  }
+  console.error(
+    formatFatalError(error)
+  );
 
   process.exitCode = 1;
 }
@@ -167,6 +207,3 @@ try {
 } catch (error) {
   handleFatalError(error);
 }
-
-
-
