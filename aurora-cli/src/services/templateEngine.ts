@@ -121,10 +121,15 @@ export async function copyTemplate(
         config
       );
 
+    const outputRelativePath =
+      mapTemplateOutputPath(
+        processedRelativePath
+      );
+
     const destination =
       resolvePathWithinRoot(
         projectRoot,
-        processedRelativePath
+        outputRelativePath
       );
 
     await fs.ensureDir(
@@ -151,4 +156,23 @@ export async function copyTemplate(
       "utf8"
     );
   }
+}
+
+function mapTemplateOutputPath(
+  relativePath: string
+): string {
+  const segments =
+    relativePath
+      .replaceAll("\\", "/")
+      .split("/")
+      .map((segment) =>
+        segment ===
+        "gitignore.template"
+          ? ".gitignore"
+          : segment
+      );
+
+  return segments.join(
+    path.sep
+  );
 }

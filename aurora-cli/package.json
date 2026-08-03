@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "aurora-cli",
   "version": "0.1.0",
   "description": "Aurora Command Line Interface",
@@ -6,9 +6,15 @@
   "bin": {
     "aurora": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "packages",
+    "templates"
+  ],
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "node scripts/clean.mjs && tsc",
+    "prepack": "npm run build",
     "start": "node dist/index.js",
     "test": "npm run build && node --test"
   },
@@ -34,4 +40,3 @@
     "typescript": "^5.9.2"
   }
 }
-
