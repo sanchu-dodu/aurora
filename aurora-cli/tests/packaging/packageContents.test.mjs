@@ -100,6 +100,9 @@ test(
       "templates/projects/nextjs/package.json",
       "templates/projects/nextjs/template.json",
       "package.json",
+      "README.md",
+      "LICENSE",
+      "CHANGELOG.md",
     ];
 
     for (
@@ -181,7 +184,7 @@ test(
 
     assert.equal(
       packageJson.bin.aurora,
-      "./dist/index.js"
+      "dist/index.js"
     );
 
     assert.deepEqual(
@@ -190,6 +193,9 @@ test(
         "dist",
         "packages",
         "templates",
+        "README.md",
+        "LICENSE",
+        "CHANGELOG.md",
       ]
     );
 

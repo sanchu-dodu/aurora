@@ -206,6 +206,7 @@ function assertCondition(
 
 async function runAurora(
   consumerRoot,
+  packageName,
   args
 ) {
   const binName =
@@ -233,7 +234,7 @@ async function runAurora(
       join(
         consumerRoot,
         "node_modules",
-        "aurora-cli"
+        ...packageName.split("/")
       );
 
     const installedPackageJson =
@@ -576,6 +577,7 @@ async function main() {
     const versionResult =
       await runAurora(
         consumerRoot,
+        packageJson.name,
         [
           "--version",
         ]
@@ -591,6 +593,7 @@ async function main() {
     const helpResult =
       await runAurora(
         consumerRoot,
+        packageJson.name,
         [
           "--help",
         ]
@@ -606,6 +609,7 @@ async function main() {
     const templateInfoResult =
       await runAurora(
         consumerRoot,
+        packageJson.name,
         [
           "template",
           "info",
@@ -621,8 +625,9 @@ async function main() {
     );
 
     await runAurora(
-      consumerRoot,
-      [
+        consumerRoot,
+        packageJson.name,
+        [
         "plugin",
         "list",
       ]
@@ -633,8 +638,9 @@ async function main() {
     );
 
     await runAurora(
-      consumerRoot,
-      [
+        consumerRoot,
+        packageJson.name,
+        [
         "template",
         "install",
         "nextjs",
@@ -656,7 +662,7 @@ async function main() {
       join(
         consumerRoot,
         "node_modules",
-        "aurora-cli"
+        ...packageJson.name.split("/")
       )
     );
 
