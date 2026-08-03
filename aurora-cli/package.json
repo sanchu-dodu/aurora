@@ -16,7 +16,8 @@
     "build": "node scripts/clean.mjs && tsc",
     "prepack": "npm run build",
     "start": "node dist/index.js",
-    "test": "npm run build && node --test"
+    "test": "npm run build && node --test",
+    "release:check": "npm test && node scripts/release-check.mjs"
   },
   "keywords": [
     "aurora",

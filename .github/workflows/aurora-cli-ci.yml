@@ -58,5 +58,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run build, tests, and package checks
-        run: npm test
+      - name: Run release validation
+        run: npm run release:check
