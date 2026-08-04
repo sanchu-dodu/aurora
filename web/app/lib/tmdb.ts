@@ -1,21 +1,14 @@
 const API_KEY = process.env.TMDB_API_TOKEN;
 const BASE_URL = "https://api.themoviedb.org/3";
 
-console.log("TMDB API KEY:", API_KEY);
-
 async function fetchMovies(endpoint: string) {
   const url = `${BASE_URL}${endpoint}?api_key=${API_KEY}`;
-
-  console.log("Fetching:", url);
 
   const res = await fetch(url, {
     next: { revalidate: 3600 },
   });
 
   const data = await res.json();
-
-  console.log("Status:", res.status);
-  console.log("Response:", data);
 
   if (!res.ok) {
     throw new Error(data.status_message || "Failed to fetch movies");

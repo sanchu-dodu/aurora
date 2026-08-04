@@ -9,6 +9,17 @@ import SimilarMovies from "../../components/SimilarMovies";
 import MyListButton from "../../components/MyListButton";
 
 
+type MovieVideo = {
+  site: string;
+  type: string;
+  key: string;
+};
+
+type MovieGenre = {
+  id: number;
+  name: string;
+};
+
 type MoviePageProps = {
   params: Promise<{
     id: string;
@@ -28,7 +39,7 @@ export default async function MovieDetails({
 
 
   const trailer = videos.find(
-    (video: any) =>
+    (video: MovieVideo) =>
       video.site === "YouTube" &&
       video.type === "Trailer"
   );
@@ -122,7 +133,7 @@ export default async function MovieDetails({
 
             <div className="flex flex-wrap gap-3 mb-8">
 
-              {movie.genres.map((genre: any) => (
+              {movie.genres.map((genre: MovieGenre) => (
 
                 <span
                   key={genre.id}
