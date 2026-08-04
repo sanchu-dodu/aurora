@@ -1,11 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import YouTube, { YouTubeProps } from "react-youtube";
+import YouTube, {
+  type YouTubePlayer,
+  type YouTubeProps,
+} from "react-youtube";
 import { Volume2, VolumeX } from "lucide-react";
 
 type HoverTrailerProps = {
   movieId: number;
+};
+
+type TrailerResponse = {
+  key?: string;
 };
 
 export default function HoverTrailer({
@@ -14,52 +21,58 @@ export default function HoverTrailer({
   const [videoKey, setVideoKey] = useState("");
   const [muted, setMuted] = useState(true);
 
-  const playerRef = useRef<any>(null);
+  const playerRef =
+    useRef<YouTubePlayer | null>(null);
 
   useEffect(() => {
     async function loadTrailer() {
       try {
-        const res = await fetch(`/api/trailer?id=${movieId}`);
-        const data = await res.json();
+        const res = await fetch(
+          `/api/trailer?id=${movieId}`
+        );
 
-        if (data?.key) {
+        const data =
+          (await res.json()) as TrailerResponse;
+
+        if (data.key) {
           setVideoKey(data.key);
         }
-      } catch (err) {
-        console.error(err);
+      } catch (error) {
+        console.error(error);
       }
     }
 
-    loadTrailer();
+    void loadTrailer();
   }, [movieId]);
 
   const onReady: YouTubeProps["onReady"] = (event) => {
     playerRef.current = event.target;
-    event.target.mute();
+    void event.target.mute();
   };
 
   function toggleMute(
-    e: React.MouseEvent<HTMLButtonElement>
+    event: React.MouseEvent<HTMLButtonElement>
   ) {
-    e.preventDefault();
-    e.stopPropagation();
+    event.preventDefault();
+    event.stopPropagation();
 
-    if (!playerRef.current) return;
+    const player = playerRef.current;
+
+    if (!player) return;
 
     if (muted) {
-      playerRef.current.unMute();
+      void player.unMute();
     } else {
-      playerRef.current.mute();
+      void player.mute();
     }
 
-    setMuted(!muted);
+    setMuted((current) => !current);
   }
 
   if (!videoKey) return null;
 
   return (
     <div className="relative h-full w-full">
-
       <YouTube
         videoId={videoKey}
         onReady={onReady}
@@ -100,7 +113,6 @@ export default function HoverTrailer({
           <Volume2 size={18} />
         )}
       </button>
-
     </div>
   );
 }

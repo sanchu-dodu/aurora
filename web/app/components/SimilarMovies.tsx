@@ -1,9 +1,12 @@
 "use client";
 
+import MovieImage from "./MovieImage";
+
 import Link from "next/link";
+import type { TmdbMovie } from "../types/media";
 
 type SimilarMoviesProps = {
-  movies: any[];
+  movies: TmdbMovie[];
 };
 
 
@@ -32,11 +35,11 @@ export default function SimilarMovies({
             <div className="relative overflow-hidden rounded-2xl">
 
 
-              <img
+              <MovieImage
                 src={
                   movie.poster_path
                     ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
-                    : "/placeholder.jpg"
+                    : "/placeholder.svg"
                 }
                 alt={movie.title}
                 className="

@@ -1,5 +1,7 @@
 "use client";
 
+import MovieImage from "./MovieImage";
+
 import Link from "next/link";
 import { Star, Play } from "lucide-react";
 
@@ -29,11 +31,11 @@ export default function AIRecommendationCard({ movie }: Props) {
           hover:shadow-blue-500/30
         "
       >
-        <img
+        <MovieImage
           src={
             movie.poster_path
               ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
-              : "/placeholder.jpg"
+              : "/placeholder.svg"
           }
           alt={movie.title}
           className="

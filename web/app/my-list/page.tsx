@@ -1,23 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import MovieImage from "../components/MovieImage";
+
+import { useMyList } from "../lib/myListStore";
 import Link from "next/link";
 
 
+
 export default function MyListPage() {
-
-  const [movies, setMovies] = useState<any[]>([]);
-
-
-  useEffect(() => {
-
-    const list = JSON.parse(
-      localStorage.getItem("aurora-list") || "[]"
-    );
-
-    setMovies(list);
-
-  }, []);
+  const movies = useMyList();
 
 
 
@@ -60,11 +51,11 @@ export default function MyListPage() {
 
               <div className="overflow-hidden rounded-2xl">
 
-                <img
+                <MovieImage
                   src={
                     movie.poster_path
                       ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
-                      : "/placeholder.jpg"
+                      : "/placeholder.svg"
                   }
                   alt={movie.title}
                   className="

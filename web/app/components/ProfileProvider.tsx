@@ -3,8 +3,8 @@
 import {
   createContext,
   useContext,
-  useEffect,
-  useState,
+  useSyncExternalStore,
+  type ReactNode,
 } from "react";
 
 export type Profile = {
@@ -21,13 +21,14 @@ type ProfileContextType = {
   deleteProfile: (id: number) => void;
 };
 
-const ProfileContext = createContext<ProfileContextType>({
-  profile: null,
-  profiles: [],
-  setProfile: () => {},
-  addProfile: () => {},
-  deleteProfile: () => {},
-});
+type ProfileSnapshot = {
+  profile: Profile | null;
+  profiles: Profile[];
+};
+
+const PROFILES_KEY = "aurora-profiles";
+const PROFILE_KEY = "aurora-profile";
+const CHANGE_EVENT = "aurora:profile-change";
 
 const defaultProfiles: Profile[] = [
   {
@@ -42,77 +43,199 @@ const defaultProfiles: Profile[] = [
   },
 ];
 
+const serverSnapshot: ProfileSnapshot = {
+  profile: null,
+  profiles: defaultProfiles,
+};
+
+let cachedProfilesRaw: string | null = null;
+let cachedProfileRaw: string | null = null;
+let cachedSnapshot: ProfileSnapshot = serverSnapshot;
+
+function isProfile(value: unknown): value is Profile {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const profile = value as Partial<Profile>;
+
+  return (
+    typeof profile.id === "number" &&
+    typeof profile.name === "string" &&
+    typeof profile.color === "string"
+  );
+}
+
+function parseProfiles(raw: string | null): Profile[] {
+  if (!raw) {
+    return defaultProfiles;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+
+    if (!Array.isArray(parsed)) {
+      return defaultProfiles;
+    }
+
+    const profiles = parsed.filter(isProfile);
+
+    return profiles.length > 0
+      ? profiles
+      : defaultProfiles;
+  } catch {
+    return defaultProfiles;
+  }
+}
+
+function parseProfile(raw: string | null): Profile | null {
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+
+    return isProfile(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function getSnapshot(): ProfileSnapshot {
+  if (typeof window === "undefined") {
+    return serverSnapshot;
+  }
+
+  const profilesRaw =
+    window.localStorage.getItem(PROFILES_KEY);
+
+  const profileRaw =
+    window.localStorage.getItem(PROFILE_KEY);
+
+  if (
+    profilesRaw === cachedProfilesRaw &&
+    profileRaw === cachedProfileRaw
+  ) {
+    return cachedSnapshot;
+  }
+
+  cachedProfilesRaw = profilesRaw;
+  cachedProfileRaw = profileRaw;
+
+  cachedSnapshot = {
+    profiles: parseProfiles(profilesRaw),
+    profile: parseProfile(profileRaw),
+  };
+
+  return cachedSnapshot;
+}
+
+function getServerSnapshot(): ProfileSnapshot {
+  return serverSnapshot;
+}
+
+function subscribe(callback: () => void): () => void {
+  function handleStorage(event: StorageEvent) {
+    if (
+      event.key === PROFILES_KEY ||
+      event.key === PROFILE_KEY
+    ) {
+      callback();
+    }
+  }
+
+  function handleChange() {
+    callback();
+  }
+
+  window.addEventListener("storage", handleStorage);
+  window.addEventListener(CHANGE_EVENT, handleChange);
+
+  return () => {
+    window.removeEventListener("storage", handleStorage);
+    window.removeEventListener(CHANGE_EVENT, handleChange);
+  };
+}
+
+function emitChange() {
+  window.dispatchEvent(new Event(CHANGE_EVENT));
+}
+
+function saveProfiles(profiles: Profile[]) {
+  const raw = JSON.stringify(profiles);
+
+  cachedProfilesRaw = raw;
+  cachedSnapshot = {
+    ...cachedSnapshot,
+    profiles,
+  };
+
+  window.localStorage.setItem(PROFILES_KEY, raw);
+  emitChange();
+}
+
+function saveProfile(profile: Profile | null) {
+  if (profile) {
+    const raw = JSON.stringify(profile);
+
+    cachedProfileRaw = raw;
+    window.localStorage.setItem(PROFILE_KEY, raw);
+  } else {
+    cachedProfileRaw = null;
+    window.localStorage.removeItem(PROFILE_KEY);
+  }
+
+  cachedSnapshot = {
+    ...cachedSnapshot,
+    profile,
+  };
+
+  emitChange();
+}
+
+const ProfileContext =
+  createContext<ProfileContextType | null>(null);
+
 export function ProfileProvider({
   children,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
-  const [profile, setCurrentProfile] =
-    useState<Profile | null>(null);
-
-  const [profiles, setProfiles] =
-    useState<Profile[]>(defaultProfiles);
-
-  useEffect(() => {
-    const savedProfiles = localStorage.getItem(
-      "aurora-profiles"
-    );
-
-    if (savedProfiles) {
-      setProfiles(JSON.parse(savedProfiles));
-    }
-
-    const savedProfile = localStorage.getItem(
-      "aurora-profile"
-    );
-
-    if (savedProfile) {
-      setCurrentProfile(JSON.parse(savedProfile));
-    }
-  }, []);
-
-  function saveProfiles(updated: Profile[]) {
-    setProfiles(updated);
-
-    localStorage.setItem(
-      "aurora-profiles",
-      JSON.stringify(updated)
-    );
-  }
+  const snapshot = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot
+  );
 
   function setProfile(profile: Profile) {
-    setCurrentProfile(profile);
-
-    localStorage.setItem(
-      "aurora-profile",
-      JSON.stringify(profile)
-    );
+    saveProfile(profile);
   }
 
   function addProfile(profile: Profile) {
-    const updated = [...profiles, profile];
-
-    saveProfiles(updated);
+    saveProfiles([
+      ...snapshot.profiles,
+      profile,
+    ]);
   }
 
   function deleteProfile(id: number) {
-    const updated = profiles.filter(
-      (profile) => profile.id !== id
+    saveProfiles(
+      snapshot.profiles.filter(
+        (profile) => profile.id !== id
+      )
     );
 
-    saveProfiles(updated);
-
-    if (profile?.id === id) {
-      setCurrentProfile(null);
-      localStorage.removeItem("aurora-profile");
+    if (snapshot.profile?.id === id) {
+      saveProfile(null);
     }
   }
 
   return (
     <ProfileContext.Provider
       value={{
-        profile,
-        profiles,
+        profile: snapshot.profile,
+        profiles: snapshot.profiles,
         setProfile,
         addProfile,
         deleteProfile,
@@ -124,5 +247,13 @@ export function ProfileProvider({
 }
 
 export function useProfile() {
-  return useContext(ProfileContext);
+  const context = useContext(ProfileContext);
+
+  if (!context) {
+    throw new Error(
+      "useProfile must be used inside ProfileProvider."
+    );
+  }
+
+  return context;
 }

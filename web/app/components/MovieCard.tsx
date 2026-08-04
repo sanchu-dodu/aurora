@@ -1,5 +1,7 @@
 "use client";
 
+import MovieImage from "./MovieImage";
+
 import { useState } from "react";
 import Link from "next/link";
 import { Play, Heart, Info, ThumbsUp } from "lucide-react";
@@ -44,11 +46,11 @@ export default function MovieCard({ movie }: MovieCardProps) {
               <HoverTrailer movieId={movie.id} />
             </div>
           ) : (
-            <img
+            <MovieImage
               src={
                 movie.poster_path
                   ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
-                  : "/placeholder.jpg"
+                  : "/placeholder.svg"
               }
               alt={movie.title}
               className="h-[360px] w-full object-cover"

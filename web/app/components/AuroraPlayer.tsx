@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { YouTubePlayer } from "react-youtube";
 import MovieTrailer from "./MovieTrailer";
 import AuroraIntro from "./AuroraIntro";
 import PlayerControls from "./PlayerControls";
+import { updateContinueWatching } from "../lib/continueWatchingStore";
 
 type AuroraPlayerProps = {
   videoKey: string;
@@ -21,7 +23,8 @@ export default function AuroraPlayer({
   const [muted, setMuted] = useState(true);
   const [cinemaMode, setCinemaMode] = useState(false);
   const [playing, setPlaying] = useState(true);
-  const [player, setPlayer] = useState<any>(null);
+  const [player, setPlayer] =
+    useState<YouTubePlayer | null>(null);
 
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -29,38 +32,45 @@ export default function AuroraPlayer({
   useEffect(() => {
     if (!player) return;
 
-    const interval = setInterval(() => {
-      const current = player.getCurrentTime();
-      const total = player.getDuration();
+    let cancelled = false;
 
-      setProgress(current);
-      setDuration(total);
+    async function updateProgress() {
+      try {
+        const [current, total] = await Promise.all([
+          player.getCurrentTime(),
+          player.getDuration(),
+        ]);
 
-      if (total > 0) {
-        const saved = JSON.parse(
-          localStorage.getItem("aurora-progress") || "[]"
-        );
+        if (cancelled) return;
 
-        const filtered = saved.filter(
-          (item: any) => item.id !== movieId
-        );
+        setProgress(current);
+        setDuration(total);
 
-        filtered.unshift({
+        if (total <= 0) return;
+        updateContinueWatching({
           id: movieId,
           title,
           poster,
           progress: current,
           duration: total,
         });
-
-        localStorage.setItem(
-          "aurora-progress",
-          JSON.stringify(filtered.slice(0, 10))
-        );
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Unable to update playback progress.", error);
+        }
       }
+    }
+
+    void updateProgress();
+
+    const interval = window.setInterval(() => {
+      void updateProgress();
     }, 1000);
 
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, [player, movieId, title, poster]);
 
   useEffect(() => {
@@ -91,7 +101,7 @@ export default function AuroraPlayer({
         playing={playing}
         onPlayerReady={(ytPlayer) => {
           setPlayer(ytPlayer);
-          ytPlayer.mute();
+          void ytPlayer.mute();
         }}
       />
 
@@ -126,6 +136,7 @@ export default function AuroraPlayer({
       </div>
 
       <PlayerControls
+        key={cinemaMode ? "cinema" : "standard"}
         muted={muted}
         cinemaMode={cinemaMode}
         playing={playing}
@@ -135,52 +146,49 @@ export default function AuroraPlayer({
           if (!player) return;
 
           if (muted) {
-            player.unMute();
-            player.setVolume(100);
+            void player.unMute();
+            void player.setVolume(100);
           } else {
-            player.mute();
+            void player.mute();
           }
 
-          setMuted(!muted);
+          setMuted((current) => !current);
         }}
-        onToggleCinema={() =>
-          setCinemaMode(!cinemaMode)
-        }
+        onToggleCinema={() => {
+          setCinemaMode((current) => !current);
+        }}
         onTogglePlay={() => {
           if (!player) return;
 
           if (playing) {
-            player.pauseVideo();
+            void player.pauseVideo();
           } else {
-            player.playVideo();
+            void player.playVideo();
           }
 
-          setPlaying(!playing);
+          setPlaying((current) => !current);
         }}
-        onSeekBackward={() => {
+        onSeekBackward={async () => {
           if (!player) return;
 
-          const current = player.getCurrentTime();
+          const current = await player.getCurrentTime();
 
-          player.seekTo(
+          await player.seekTo(
             Math.max(current - 10, 0),
             true
           );
         }}
-        onSeekForward={() => {
+        onSeekForward={async () => {
           if (!player) return;
 
-          const current = player.getCurrentTime();
+          const current = await player.getCurrentTime();
 
-          player.seekTo(
-            current + 10,
-            true
-          );
+          await player.seekTo(current + 10, true);
         }}
         onSeek={(time) => {
           if (!player) return;
 
-          player.seekTo(time, true);
+          void player.seekTo(time, true);
           setProgress(time);
         }}
       />

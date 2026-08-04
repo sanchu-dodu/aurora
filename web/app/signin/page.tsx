@@ -29,8 +29,12 @@ export default function SignInPage() {
       );
 
       router.push("/");
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to sign in. Please try again."
+      );
     }
 
     setLoading(false);
@@ -81,7 +85,7 @@ export default function SignInPage() {
         </button>
 
         <p className="mt-6 text-center text-gray-400">
-          Don't have an account?{" "}
+          Don&apos;t have an account?{" "}
           <Link
             href="/signup"
             className="text-blue-400 hover:underline"

@@ -1,5 +1,7 @@
 "use client";
 
+import MovieImage from "../components/MovieImage";
+
 import { useState } from "react";
 import Link from "next/link";
 
@@ -89,11 +91,11 @@ export default function SearchPage() {
             href={`/movies/${movie.id}`}
             className="group"
           >
-            <img
+            <MovieImage
               src={
                 movie.poster_path
                   ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
-                  : "/placeholder.jpg"
+                  : "/placeholder.svg"
               }
               alt={movie.title}
               className="aspect-[2/3] w-full rounded-xl object-cover transition duration-300 group-hover:scale-105"

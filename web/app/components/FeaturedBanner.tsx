@@ -20,7 +20,7 @@ export default function FeaturedBanner() {
 
           <p className="text-gray-300 max-w-xl mb-8">
             A team of explorers travel through a wormhole in space
-            to ensure humanity's survival.
+            to ensure humanity&apos;s survival.
           </p>
 
           <button className="bg-blue-600 px-8 py-3 rounded-xl hover:bg-blue-700 transition">

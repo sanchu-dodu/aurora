@@ -1,33 +1,44 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import YouTube from "react-youtube";
+import YouTube, {
+  type YouTubePlayer,
+} from "react-youtube";
 import { Volume2, VolumeX } from "lucide-react";
 
 type Props = {
   movieId: number;
 };
 
+type TrailerResponse = {
+  key?: string;
+};
+
 export default function HeroTrailer({ movieId }: Props) {
   const [videoKey, setVideoKey] = useState("");
   const [muted, setMuted] = useState(true);
-  const [player, setPlayer] = useState<any>(null);
+  const [player, setPlayer] =
+    useState<YouTubePlayer | null>(null);
 
   useEffect(() => {
     async function loadTrailer() {
       try {
-        const res = await fetch(`/api/trailer?id=${movieId}`);
-        const data = await res.json();
+        const res = await fetch(
+          `/api/trailer?id=${movieId}`
+        );
 
-        if (data?.key) {
+        const data =
+          (await res.json()) as TrailerResponse;
+
+        if (data.key) {
           setVideoKey(data.key);
         }
-      } catch (err) {
-        console.error(err);
+      } catch (error) {
+        console.error(error);
       }
     }
 
-    loadTrailer();
+    void loadTrailer();
   }, [movieId]);
 
   if (!videoKey) return null;
@@ -41,7 +52,7 @@ export default function HeroTrailer({ movieId }: Props) {
             setPlayer(event.target);
 
             if (muted) {
-              event.target.mute();
+              void event.target.mute();
             }
           }}
           opts={{
@@ -66,12 +77,12 @@ export default function HeroTrailer({ movieId }: Props) {
           if (!player) return;
 
           if (muted) {
-            player.unMute();
+            void player.unMute();
           } else {
-            player.mute();
+            void player.mute();
           }
 
-          setMuted(!muted);
+          setMuted((current) => !current);
         }}
         className="
           absolute

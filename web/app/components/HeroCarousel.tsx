@@ -1,23 +1,17 @@
 "use client";
 
+import Image from "next/image";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Play, Info } from "lucide-react";
 import HeroTrailer from "./HeroTrailer";
-
-type Movie = {
-  id: number;
-  title: string;
-  overview: string;
-  backdrop_path: string;
-  vote_average: number;
-  release_date: string;
-};
+import type { TmdbMovie } from "../types/media";
 
 export default function HeroCarousel({
   movies,
 }: {
-  movies: Movie[];
+  movies: TmdbMovie[];
 }) {
   const [current, setCurrent] = useState(0);
 
@@ -34,11 +28,19 @@ export default function HeroCarousel({
   return (
     <>
       {/* Background */}
-      <img
+      <Image
         key={movie.id}
-        src={`https://image.tmdb.org/t/p/original${movie.backdrop_path}`}
+        src={
+          movie.backdrop_path
+            ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}`
+            : "/placeholder.svg"
+        }
         alt={movie.title}
-        className="absolute inset-0 h-full w-full object-cover"
+        fill
+        sizes="100vw"
+        loading="eager"
+        fetchPriority="high"
+        className="object-cover"
       />
 
       <HeroTrailer movieId={movie.id} />

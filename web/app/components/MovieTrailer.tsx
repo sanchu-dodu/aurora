@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import YouTube from "react-youtube";
+import YouTube, {
+  type YouTubePlayer,
+} from "react-youtube";
 import PlayerLoader from "./PlayerLoader";
 
 type MovieTrailerProps = {
   videoKey: string;
   muted: boolean;
   playing: boolean;
-  onPlayerReady: (player: any) => void;
+  onPlayerReady: (player: YouTubePlayer) => void;
 };
 
 export default function MovieTrailer({
@@ -17,20 +19,21 @@ export default function MovieTrailer({
   playing,
   onPlayerReady,
 }: MovieTrailerProps) {
-  const [loading, setLoading] = useState(true);
-  const [player, setPlayer] = useState<any>(null);
+  const [player, setPlayer] =
+    useState<YouTubePlayer | null>(null);
 
-  useEffect(() => {
-    setLoading(true);
-  }, [videoKey]);
+  const [readyVideoKey, setReadyVideoKey] =
+    useState<string | null>(null);
+
+  const loading = readyVideoKey !== videoKey;
 
   useEffect(() => {
     if (!player) return;
 
     if (playing) {
-      player.playVideo();
+      void player.playVideo();
     } else {
-      player.pauseVideo();
+      void player.pauseVideo();
     }
   }, [playing, player]);
 
@@ -38,19 +41,19 @@ export default function MovieTrailer({
     if (!player) return;
 
     if (muted) {
-      player.mute();
+      void player.mute();
     } else {
-      player.unMute();
-      player.setVolume(100);
+      void player.unMute();
+      void player.setVolume(100);
     }
   }, [muted, player]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden">
-
+    <div className="relative h-full w-full overflow-hidden">
       <PlayerLoader loading={loading} />
 
       <YouTube
+        key={videoKey}
         videoId={videoKey}
         opts={{
           width: "100%",
@@ -65,14 +68,13 @@ export default function MovieTrailer({
         }}
         onReady={(event) => {
           setPlayer(event.target);
+          setReadyVideoKey(videoKey);
           onPlayerReady(event.target);
 
-          event.target.mute();
-          setLoading(false);
+          void event.target.mute();
         }}
-        className="absolute inset-0 w-full h-full scale-125"
+        className="absolute inset-0 h-full w-full scale-125"
       />
-
     </div>
   );
 }

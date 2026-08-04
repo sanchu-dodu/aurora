@@ -1,3 +1,4 @@
+import MovieImage from "../../components/MovieImage";
 import {
   getMovieDetails,
   getMovieVideos,
@@ -52,7 +53,7 @@ export default async function MovieDetails({
 
   const poster = movie.poster_path
     ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
-    : "/placeholder.jpg";
+    : "/placeholder.svg";
 
 
   return (
@@ -93,7 +94,7 @@ export default async function MovieDetails({
         <div className="flex flex-col lg:flex-row gap-10">
 
 
-          <img
+          <MovieImage
             src={poster}
             alt={movie.title}
             className="w-72 rounded-2xl shadow-2xl"

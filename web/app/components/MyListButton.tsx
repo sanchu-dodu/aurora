@@ -1,80 +1,40 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
+import type { TmdbMovie } from "../types/media";
+import {
+  setMyList,
+  useMyList,
+} from "../lib/myListStore";
 
 type MyListButtonProps = {
-  movie: any;
+  movie: TmdbMovie;
 };
-
 
 export default function MyListButton({
   movie,
 }: MyListButtonProps) {
+  const list = useMyList();
 
-  const [saved, setSaved] = useState(false);
-
-
-  useEffect(() => {
-
-    const list = JSON.parse(
-      localStorage.getItem("aurora-list") || "[]"
-    );
-
-
-    const exists = list.some(
-      (item: any) => item.id === movie.id
-    );
-
-
-    setSaved(exists);
-
-  }, [movie.id]);
-
-
+  const saved = list.some(
+    (item) => item.id === movie.id
+  );
 
   function toggleList() {
-
-    const list = JSON.parse(
-      localStorage.getItem("aurora-list") || "[]"
-    );
-
-
     if (saved) {
-
-      const updated = list.filter(
-        (item: any) => item.id !== movie.id
+      setMyList(
+        list.filter((item) => item.id !== movie.id)
       );
 
-      localStorage.setItem(
-        "aurora-list",
-        JSON.stringify(updated)
-      );
-
-
-      setSaved(false);
-
-
-    } else {
-
-      list.push(movie);
-
-
-      localStorage.setItem(
-        "aurora-list",
-        JSON.stringify(list)
-      );
-
-
-      setSaved(true);
-
+      return;
     }
 
+    setMyList([
+      movie,
+      ...list.filter((item) => item.id !== movie.id),
+    ]);
   }
 
-
   return (
-
     <button
       onClick={toggleList}
       className="
@@ -83,18 +43,14 @@ export default function MyListButton({
         border-white
         px-8
         py-4
+        transition
         hover:bg-white
         hover:text-black
-        transition
       "
     >
-
       {saved
         ? "✓ Added to My List"
-        : "❤️ Add to My List"}
-
+        : "+ Add to My List"}
     </button>
-
   );
-
 }

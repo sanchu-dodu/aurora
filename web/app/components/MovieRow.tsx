@@ -1,5 +1,6 @@
 import MovieCard from "./MovieCard";
 import MovieCardSkeleton from "./MovieCardSkeleton";
+import type { TmdbMovie } from "../types/media";
 
 import {
   getTrendingMovies,
@@ -23,7 +24,7 @@ export default async function MovieRow({
   title,
   type,
 }: MovieRowProps) {
-  let movies: any[] = [];
+  let movies: TmdbMovie[] = [];
 
   switch (type) {
     case "trending":

@@ -29,8 +29,12 @@ export default function SignupPage() {
       );
 
       router.push("/");
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to create the account. Please try again."
+      );
     }
 
     setLoading(false);

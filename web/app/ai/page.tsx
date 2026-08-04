@@ -109,7 +109,7 @@ return;
       </h1>
 
       <p className="mb-10 text-gray-400">
-        Describe what you'd like to watch and Aurora will recommend movies.
+        Describe what you&apos;d like to watch and Aurora will recommend movies.
       </p>
 
       <div className="mb-10 flex gap-4">

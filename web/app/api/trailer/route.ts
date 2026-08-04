@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { TmdbVideo } from "../../types/media";
 
 const API_KEY = process.env.TMDB_API_TOKEN;
 const BASE_URL = "https://api.themoviedb.org/3";
@@ -28,7 +29,7 @@ export async function GET(request: NextRequest) {
     }
 
     const trailer = data.results.find(
-      (video: any) =>
+      (video: TmdbVideo) =>
         video.site === "YouTube" &&
         video.type === "Trailer"
     );

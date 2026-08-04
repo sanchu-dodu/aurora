@@ -48,7 +48,7 @@ export default function ProfilesPage() {
       <div className="w-full max-w-6xl">
 
         <h1 className="mb-14 text-center text-5xl font-black">
-          Who's Watching?
+          Who&apos;s Watching?
         </h1>
 
         <div className="flex flex-wrap justify-center gap-10">

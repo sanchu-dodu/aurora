@@ -1,27 +1,13 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useState } from "react";
-import { Play, Info } from "lucide-react";
+import MovieImage from "./MovieImage";
 
-type ContinueMovie = {
-  id: number;
-  title: string;
-  poster: string;
-  progress: number;
-  duration: number;
-};
+import Link from "next/link";
+import { Play, Info } from "lucide-react";
+import { useContinueWatching } from "../lib/continueWatchingStore";
 
 export default function ContinueWatching() {
-  const [movies, setMovies] = useState<ContinueMovie[]>([]);
-
-  useEffect(() => {
-    const saved = JSON.parse(
-      localStorage.getItem("aurora-progress") || "[]"
-    );
-
-    setMovies(saved);
-  }, []);
+  const movies = useContinueWatching();
 
   if (movies.length === 0) return null;
 
@@ -33,7 +19,8 @@ export default function ContinueWatching() {
         </h2>
 
         <span className="text-sm text-gray-400">
-          {movies.length} {movies.length === 1 ? "movie" : "movies"}
+          {movies.length}{" "}
+          {movies.length === 1 ? "movie" : "movies"}
         </span>
       </div>
 
@@ -41,7 +28,10 @@ export default function ContinueWatching() {
         {movies.map((movie) => {
           const percentage =
             movie.duration > 0
-              ? (movie.progress / movie.duration) * 100
+              ? Math.min(
+                  (movie.progress / movie.duration) * 100,
+                  100
+                )
               : 0;
 
           return (
@@ -61,7 +51,7 @@ export default function ContinueWatching() {
               "
             >
               <Link href={`/movies/${movie.id}`}>
-                <img
+                <MovieImage
                   src={movie.poster}
                   alt={movie.title}
                   className="
@@ -76,7 +66,6 @@ export default function ContinueWatching() {
               </Link>
 
               <div className="p-5">
-
                 <h3 className="truncate text-xl font-bold">
                   {movie.title}
                 </h3>
@@ -101,7 +90,6 @@ export default function ContinueWatching() {
                 </div>
 
                 <div className="mt-6 flex gap-3">
-
                   <Link
                     href={`/movies/${movie.id}`}
                     className="
@@ -125,6 +113,7 @@ export default function ContinueWatching() {
 
                   <Link
                     href={`/movies/${movie.id}`}
+                    aria-label={`View details for ${movie.title}`}
                     className="
                       flex
                       h-12
@@ -141,9 +130,7 @@ export default function ContinueWatching() {
                   >
                     <Info size={20} />
                   </Link>
-
                 </div>
-
               </div>
             </div>
           );

@@ -1,3 +1,4 @@
+import MovieImage from "./MovieImage";
 import Link from "next/link";
 import { getTrendingMovies } from "../lib/tmdb";
 
@@ -38,11 +39,11 @@ export default async function TopTen() {
                 {index + 1}
               </span>
 
-              <img
+              <MovieImage
                 src={
                   movie.poster_path
                     ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
-                    : "/placeholder.jpg"
+                    : "/placeholder.svg"
                 }
                 alt={movie.title}
                 className="

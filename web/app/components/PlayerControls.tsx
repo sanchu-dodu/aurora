@@ -34,25 +34,23 @@ export default function PlayerControls({
   onSeek,
 }: PlayerControlsProps) {
   const [visible, setVisible] = useState(true);
+  const controlsVisible = !cinemaMode || visible;
 
   useEffect(() => {
-    if (!cinemaMode) {
-      setVisible(true);
-      return;
-    }
+    if (!cinemaMode || !visible) return;
 
-    const timer = setTimeout(() => {
+    const timer = window.setTimeout(() => {
       setVisible(false);
     }, 3000);
 
-    return () => clearTimeout(timer);
+    return () => window.clearTimeout(timer);
   }, [cinemaMode, visible]);
 
   return (
     <div
       onMouseMove={() => setVisible(true)}
       className={`absolute bottom-8 left-8 right-8 z-40 transition-all duration-500 ${
-        visible ? "opacity-100" : "opacity-0"
+        controlsVisible ? "opacity-100" : "opacity-0"
       }`}
     >
       {/* Timeline */}

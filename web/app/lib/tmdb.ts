@@ -1,7 +1,9 @@
+import type { TmdbMovie, TmdbVideo } from "../types/media";
+
 const API_KEY = process.env.TMDB_API_TOKEN;
 const BASE_URL = "https://api.themoviedb.org/3";
 
-async function fetchMovies(endpoint: string) {
+async function fetchMovies(endpoint: string): Promise<TmdbMovie[]> {
   const url = `${BASE_URL}${endpoint}?api_key=${API_KEY}`;
 
   const res = await fetch(url, {
@@ -131,7 +133,7 @@ export async function getMovieTrailer(id: number | string) {
   }
 
   const trailer = data.results.find(
-    (video: any) =>
+    (video: TmdbVideo) =>
       video.site === "YouTube" &&
       video.type === "Trailer"
   );
