@@ -7,9 +7,8 @@ on:
       - ".github/workflows/aurora-cli-ci.yml"
 
   pull_request:
-    paths:
-      - "aurora-cli/**"
-      - ".github/workflows/aurora-cli-ci.yml"
+    branches:
+      - master
 
   workflow_dispatch:
 
