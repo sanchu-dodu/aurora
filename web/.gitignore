@@ -45,9 +45,6 @@ dist/
 Aurora*/
 aurora-*/
 
-# Keep the actual Aurora CLI repository
-!aurora-cli/
-!aurora-cli/**
 
 my-blog/
 
@@ -55,3 +52,6 @@ my-blog/
 
 
 *.log
+
+# Prevent misplaced nested Aurora CLI copies
+/aurora-cli/
