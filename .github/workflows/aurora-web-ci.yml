@@ -1,0 +1,75 @@
+name: Aurora Web CI
+
+on:
+  push:
+    paths:
+      - "web/**"
+      - ".github/workflows/aurora-web-ci.yml"
+
+  pull_request:
+    paths:
+      - "web/**"
+      - ".github/workflows/aurora-web-ci.yml"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aurora-web-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Lint, build, and smoke tests
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 25
+
+    defaults:
+      run:
+        working-directory: web
+
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      TMDB_API_TOKEN: ${{ secrets.TMDB_API_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Verify required secret
+        shell: bash
+        run: |
+          if [ -z "$TMDB_API_TOKEN" ]; then
+            echo "::error::TMDB_API_TOKEN repository secret is not configured."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run TypeScript validation
+        run: npx tsc --noEmit
+
+      - name: Build production application
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright smoke tests
+        run: npm run test:e2e
