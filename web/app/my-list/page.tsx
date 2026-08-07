@@ -1,7 +1,6 @@
 "use client";
 
 import MovieImage from "../components/MovieImage";
-import ProtectedRoute from "../components/ProtectedRoute";
 
 import { useMyList } from "../lib/myListStore";
 import Link from "next/link";
@@ -15,8 +14,7 @@ export default function MyListPage() {
 
   return (
 
-    <ProtectedRoute>
-      <main className="min-h-screen bg-[#070B14] text-white px-10 py-16">
+    <main className="min-h-screen bg-[#070B14] text-white px-10 py-16">
 
 
       <h1 className="text-5xl font-black mb-12">
@@ -99,7 +97,7 @@ export default function MyListPage() {
       )}
 
 
-      </main>
-    </ProtectedRoute>
+    </main>
+
   );
 }
