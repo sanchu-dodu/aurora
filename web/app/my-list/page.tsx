@@ -1,36 +1,42 @@
 "use client";
 
-import MovieImage from "../components/MovieImage";
-
-import { useMyList } from "../lib/myListStore";
 import Link from "next/link";
 
-
+import MovieImage from "../components/MovieImage";
+import { useUserMyList } from "../lib/useUserMyList";
 
 export default function MyListPage() {
-  const movies = useMyList();
-
-
+  const {
+    movies,
+    loading,
+    error,
+  } = useUserMyList();
 
   return (
-
     <main className="min-h-screen bg-[#070B14] text-white px-10 py-16">
-
-
       <h1 className="text-5xl font-black mb-12">
         My List
       </h1>
 
-
-
-      {movies.length === 0 ? (
-
+      {loading ? (
+        <p
+          className="text-gray-400 text-xl"
+          aria-live="polite"
+        >
+          Loading My List...
+        </p>
+      ) : error ? (
+        <p
+          role="alert"
+          className="text-red-400 text-xl"
+        >
+          Aurora could not synchronize My List.
+        </p>
+      ) : movies.length === 0 ? (
         <p className="text-gray-400 text-xl">
           Your list is empty.
         </p>
-
       ) : (
-
         <div
           className="
             grid
@@ -40,17 +46,13 @@ export default function MyListPage() {
             gap-6
           "
         >
-
           {movies.map((movie) => (
-
             <Link
               key={movie.id}
               href={`/movies/${movie.id}`}
               className="group"
             >
-
               <div className="overflow-hidden rounded-2xl">
-
                 <MovieImage
                   src={
                     movie.poster_path
@@ -67,9 +69,7 @@ export default function MyListPage() {
                     group-hover:scale-110
                   "
                 />
-
               </div>
-
 
               <h2
                 className="
@@ -82,22 +82,13 @@ export default function MyListPage() {
                 {movie.title}
               </h2>
 
-
               <p className="text-gray-400 text-sm">
-                ⭐ {movie.vote_average?.toFixed(1)}
+                {"\u2B50"} {movie.vote_average?.toFixed(1)}
               </p>
-
-
             </Link>
-
           ))}
-
         </div>
-
       )}
-
-
     </main>
-
   );
 }
