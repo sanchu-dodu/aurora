@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import { useProfile } from "../components/ProfileProvider";
+import ProtectedRoute from "../components/ProtectedRoute";
 
 const colors = [
   "bg-blue-600",
@@ -43,7 +44,8 @@ export default function ProfilesPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#070B14] text-white flex items-center justify-center px-6">
+    <ProtectedRoute>
+      <main className="min-h-screen bg-[#070B14] text-white flex items-center justify-center px-6">
 
       <div className="w-full max-w-6xl">
 
@@ -170,6 +172,7 @@ export default function ProfilesPage() {
 
       )}
 
-    </main>
+      </main>
+    </ProtectedRoute>
   );
 }
