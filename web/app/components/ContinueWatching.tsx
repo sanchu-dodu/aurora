@@ -4,12 +4,20 @@ import MovieImage from "./MovieImage";
 
 import Link from "next/link";
 import { Play, Info } from "lucide-react";
-import { useContinueWatching } from "../lib/continueWatchingStore";
+import { useUserContinueWatching } from "../lib/useUserContinueWatching";
 
 export default function ContinueWatching() {
-  const movies = useContinueWatching();
+  const {
+    movies,
+    loading,
+  } = useUserContinueWatching();
 
-  if (movies.length === 0) return null;
+  if (
+    loading ||
+    movies.length === 0
+  ) {
+    return null;
+  }
 
   return (
     <section className="my-16 px-8">

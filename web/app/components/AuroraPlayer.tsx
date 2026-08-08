@@ -5,7 +5,7 @@ import type { YouTubePlayer } from "react-youtube";
 import MovieTrailer from "./MovieTrailer";
 import AuroraIntro from "./AuroraIntro";
 import PlayerControls from "./PlayerControls";
-import { updateContinueWatching } from "../lib/continueWatchingStore";
+import { useUserContinueWatching } from "../lib/useUserContinueWatching";
 
 type AuroraPlayerProps = {
   videoKey: string;
@@ -20,6 +20,10 @@ export default function AuroraPlayer({
   movieId,
   poster,
 }: AuroraPlayerProps) {
+  const {
+    updateMovie: updateContinueWatching,
+  } = useUserContinueWatching();
+
   const [muted, setMuted] = useState(true);
   const [cinemaMode, setCinemaMode] = useState(false);
   const [playing, setPlaying] = useState(true);
@@ -47,7 +51,8 @@ export default function AuroraPlayer({
         setDuration(total);
 
         if (total <= 0) return;
-        updateContinueWatching({
+
+        await updateContinueWatching({
           id: movieId,
           title,
           poster,
@@ -56,7 +61,10 @@ export default function AuroraPlayer({
         });
       } catch (error) {
         if (!cancelled) {
-          console.error("Unable to update playback progress.", error);
+          console.error(
+            "Unable to update playback progress.",
+            error
+          );
         }
       }
     }
@@ -71,7 +79,13 @@ export default function AuroraPlayer({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [player, movieId, title, poster]);
+  }, [
+    player,
+    movieId,
+    title,
+    poster,
+    updateContinueWatching,
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -83,7 +97,10 @@ export default function AuroraPlayer({
     window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener(
+        "keydown",
+        handleKeyDown
+      );
     };
   }, []);
 
@@ -171,7 +188,8 @@ export default function AuroraPlayer({
         onSeekBackward={async () => {
           if (!player) return;
 
-          const current = await player.getCurrentTime();
+          const current =
+            await player.getCurrentTime();
 
           await player.seekTo(
             Math.max(current - 10, 0),
@@ -181,9 +199,13 @@ export default function AuroraPlayer({
         onSeekForward={async () => {
           if (!player) return;
 
-          const current = await player.getCurrentTime();
+          const current =
+            await player.getCurrentTime();
 
-          await player.seekTo(current + 10, true);
+          await player.seekTo(
+            current + 10,
+            true
+          );
         }}
         onSeek={(time) => {
           if (!player) return;
