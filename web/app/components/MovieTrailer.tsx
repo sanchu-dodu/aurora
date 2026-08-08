@@ -13,6 +13,29 @@ type MovieTrailerProps = {
   onPlayerReady: (player: YouTubePlayer) => void;
 };
 
+async function runOnAttachedPlayer(
+  player: YouTubePlayer,
+  action: (
+    player: YouTubePlayer
+  ) => void | Promise<void>
+): Promise<void> {
+  try {
+    const iframe = await player.getIframe();
+
+    if (!iframe?.isConnected) {
+      return;
+    }
+
+    await action(player);
+  } catch {
+    /*
+     * react-youtube can briefly retain a player object after
+     * its iframe has been detached during a React lifecycle
+     * transition. Player commands are therefore best-effort.
+     */
+  }
+}
+
 export default function MovieTrailer({
   videoKey,
   muted,
@@ -30,22 +53,33 @@ export default function MovieTrailer({
   useEffect(() => {
     if (!player) return;
 
-    if (playing) {
-      void player.playVideo();
-    } else {
-      void player.pauseVideo();
-    }
+    void runOnAttachedPlayer(
+      player,
+      async (attachedPlayer) => {
+        if (playing) {
+          await attachedPlayer.playVideo();
+        } else {
+          await attachedPlayer.pauseVideo();
+        }
+      }
+    );
   }, [playing, player]);
 
   useEffect(() => {
     if (!player) return;
 
-    if (muted) {
-      void player.mute();
-    } else {
-      void player.unMute();
-      void player.setVolume(100);
-    }
+    void runOnAttachedPlayer(
+      player,
+      async (attachedPlayer) => {
+        if (muted) {
+          await attachedPlayer.mute();
+          return;
+        }
+
+        await attachedPlayer.unMute();
+        await attachedPlayer.setVolume(100);
+      }
+    );
   }, [muted, player]);
 
   return (
@@ -71,7 +105,11 @@ export default function MovieTrailer({
           setReadyVideoKey(videoKey);
           onPlayerReady(event.target);
 
-          void event.target.mute();
+          void runOnAttachedPlayer(
+            event.target,
+            (attachedPlayer) =>
+              attachedPlayer.mute()
+          );
         }}
         className="absolute inset-0 h-full w-full scale-125"
       />
