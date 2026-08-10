@@ -45,14 +45,16 @@ export async function installTemplates(
       entry.name
     );
 
-    const target = path.join(
-      context.getProjectPath(),
-      "src",
-      entry.name.replace(
-        ".template",
-        ""
-      )
-    );
+    const target =
+      context.resolveProjectPath(
+        path.join(
+          "src",
+          entry.name.replace(
+            ".template",
+            ""
+          )
+        )
+      );
 
     const content = await fs.readFile(
       source,

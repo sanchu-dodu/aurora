@@ -5,6 +5,10 @@ import type {
   FileTransaction,
 } from "../../core/fileTransaction.js";
 
+import {
+  ProjectPathBoundary,
+} from "../../security/projectPathBoundary.js";
+
 export interface FeatureManifest {
   installed: string[];
 }
@@ -12,10 +16,10 @@ export interface FeatureManifest {
 function getManifestPath(
   projectPath: string
 ): string {
-  return path.join(
-    path.resolve(projectPath),
-    ".aurora",
-    "features.json"
+  return new ProjectPathBoundary(
+    projectPath
+  ).resolve(
+    ".aurora/features.json"
   );
 }
 

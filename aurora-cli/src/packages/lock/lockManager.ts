@@ -1,7 +1,9 @@
 ﻿import fs from "node:fs/promises";
-import path from "node:path";
-
 import { WriteLock } from "../synchronization/writeLock.js";
+
+import {
+  ProjectPathBoundary,
+} from "../../security/projectPathBoundary.js";
 
 export interface LockFile {
   packages: Record<string, string>;
@@ -11,13 +13,20 @@ export class LockManager {
   private readonly lock =
     new WriteLock();
 
+  private readonly pathBoundary:
+    ProjectPathBoundary;
+
   constructor(
-    private readonly projectPath: string
-  ) {}
+    projectPath: string
+  ) {
+    this.pathBoundary =
+      new ProjectPathBoundary(
+        projectPath
+      );
+  }
 
   private get lockFile(): string {
-    return path.join(
-      this.projectPath,
+    return this.pathBoundary.resolve(
       "aurora.lock"
     );
   }

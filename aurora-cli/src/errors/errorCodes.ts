@@ -10,6 +10,9 @@ export const ErrorCodes = {
 
   DOCTOR_CHECK_FAILED:
     "DOCTOR_CHECK_FAILED",
+
+  UNSAFE_PROJECT_PATH:
+    "UNSAFE_PROJECT_PATH",
 } as const;
 
 export type AuroraErrorCode =
