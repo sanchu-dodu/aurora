@@ -7,6 +7,7 @@ import {
   readFile,
   realpath,
   rm,
+  writeFile,
 } from "node:fs/promises";
 
 import {
@@ -82,15 +83,29 @@ test(
                     receivedProjectPath,
                   packageManager,
                 });
+
+                await writeFile(
+                  join(
+                    receivedProjectPath,
+                    "package-lock.json"
+                  ),
+                  "{}\n",
+                  "utf8"
+                );
               },
 
               async gitInitializer(
-                receivedProjectPath
+                receivedProjectPath,
+                generatedFiles
               ) {
                 operations.push({
                   type: "git",
                   projectPath:
                     receivedProjectPath,
+                  generatedFiles:
+                    [
+                      ...generatedFiles,
+                    ].sort(),
                 });
               },
             },
@@ -119,6 +134,26 @@ test(
             type: "git",
             projectPath:
               canonicalProjectPath,
+            generatedFiles: [
+              ".gitignore",
+              "app\\page.tsx",
+              "aurora.config.json",
+              "installed-template.txt",
+              "next-env.d.ts",
+              "package-lock.json",
+              "package.json",
+              "README.md",
+              "tsconfig.json",
+            ].map(
+              relativePath =>
+                relativePath.replaceAll(
+                  "\\",
+                  process.platform ===
+                    "win32"
+                    ? "\\"
+                    : "/"
+                )
+            ).sort(),
           },
         ]
       );

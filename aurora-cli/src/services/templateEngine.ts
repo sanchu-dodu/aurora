@@ -43,7 +43,7 @@ export async function copyTemplate(
   config: ProjectConfig,
   templateRoot =
     getDefaultProjectTemplateRoot()
-): Promise<void> {
+): Promise<string[]> {
   const pathBoundary =
     new ProjectPathBoundary(
       projectPath
@@ -105,6 +105,9 @@ export async function copyTemplate(
       templatePath
     );
 
+  const generatedFiles:
+    string[] = [];
+
   for (const source of files) {
     const relativePath =
       path.relative(
@@ -165,7 +168,13 @@ export async function copyTemplate(
       content,
       "utf8"
     );
+
+    generatedFiles.push(
+      outputRelativePath
+    );
   }
+
+  return generatedFiles;
 }
 
 function mapTemplateOutputPath(

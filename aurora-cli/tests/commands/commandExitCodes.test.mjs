@@ -358,8 +358,8 @@ test(
               command
             );
 
-            return command !==
-              "npm --version";
+            return command.command !==
+              "npm";
           }
         ),
       /Doctor checks failed: npm/
@@ -368,9 +368,24 @@ test(
     assert.deepEqual(
       receivedCommands,
       [
-        "git --version",
-        "node --version",
-        "npm --version",
+        {
+          command: "git",
+          args: [
+            "--version",
+          ],
+        },
+        {
+          command: "node",
+          args: [
+            "--version",
+          ],
+        },
+        {
+          command: "npm",
+          args: [
+            "--version",
+          ],
+        },
       ]
     );
   }
