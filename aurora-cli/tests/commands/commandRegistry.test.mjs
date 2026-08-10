@@ -13,14 +13,17 @@ import "../../dist/commands/featureRegistration.js";
 import "../../dist/commands/generateRegistration.js";
 import "../../dist/commands/packageRegistration.js";
 import "../../dist/commands/recoveryRegistration.js";
+import "../../dist/commands/completionRegistration.js";
 
 import {
+  getCommandActivation,
   getRegisteredCommandIds,
   registerAllCommands,
   registerCommand,
 } from "../../dist/core/commandRegistry.js";
 
 const expectedTopLevelCommands = [
+  "completion",
   "config",
   "doctor",
   "feature",
@@ -70,6 +73,37 @@ test(
       getRegisteredCommandIds().sort(),
       expectedTopLevelCommands
     );
+  }
+);
+
+test(
+  "Completion is the only command that bypasses runtime activation",
+  () => {
+    assert.equal(
+      getCommandActivation(
+        "completion"
+      ),
+      "none"
+    );
+
+    for (
+      const commandId
+      of expectedTopLevelCommands
+    ) {
+      if (
+        commandId ===
+        "completion"
+      ) {
+        continue;
+      }
+
+      assert.equal(
+        getCommandActivation(
+          commandId
+        ),
+        "runtime"
+      );
+    }
   }
 );
 

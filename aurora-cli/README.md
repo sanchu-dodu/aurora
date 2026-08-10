@@ -52,6 +52,19 @@ aurora feature list
 aurora package list
 ```
 
+## Shell completion
+
+Aurora can generate completion setup without starting the runtime or loading packages and plugins:
+
+```bash
+aurora completion bash
+aurora completion zsh
+aurora completion fish
+aurora completion powershell
+```
+
+Evaluate or save the generated script using the normal setup for your shell. Help, version, completion, and rejected command lines are parsed before Aurora activates runtime services.
+
 ## Error reporting
 
 Aurora uses stable error codes for recognized command failures.
