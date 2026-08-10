@@ -28,7 +28,10 @@ export class InstallerContext {
       );
 
     this.transaction =
-      new TransactionManager();
+      new TransactionManager(
+        "package installation",
+        this.pathBoundary.projectRoot
+      );
 
     this.config =
       new ConfigContext(
@@ -80,7 +83,9 @@ export class InstallerContext {
     );
 
     await fs.writeFile(
-      fullPath,
+      this.resolveProjectPath(
+        filePath
+      ),
       content,
       "utf8"
     );

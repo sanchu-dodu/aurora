@@ -45,15 +45,18 @@ export async function installTemplates(
       entry.name
     );
 
+    const targetPath =
+      path.join(
+        "src",
+        entry.name.replace(
+          ".template",
+          ""
+        )
+      );
+
     const target =
       context.resolveProjectPath(
-        path.join(
-          "src",
-          entry.name.replace(
-            ".template",
-            ""
-          )
-        )
+        targetPath
       );
 
     const content = await fs.readFile(
@@ -73,7 +76,9 @@ export async function installTemplates(
     );
 
     await fs.writeFile(
-      target,
+      context.resolveProjectPath(
+        targetPath
+      ),
       content,
       "utf8"
     );

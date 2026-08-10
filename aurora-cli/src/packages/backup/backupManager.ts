@@ -1,38 +1,39 @@
-import fs from "fs/promises";
-import path from "path";
+import fs from "node:fs/promises";
+import path from "node:path";
 
+import {
+  ProjectPathBoundary,
+} from "../../security/projectPathBoundary.js";
+
+export const BACKUP_FILES = [
+  "package.json",
+  ".env.example",
+  ".aurora/cache.json",
+] as const;
 
 export class BackupManager {
+  private readonly pathBoundary:
+    ProjectPathBoundary;
 
-
-  private backupPath: string;
-
-
-  constructor(
-    private projectPath: string
-  ) {
-
-    this.backupPath =
-      path.join(
-        projectPath,
-        ".aurora",
-        "backups"
+  constructor(projectPath: string) {
+    this.pathBoundary =
+      new ProjectPathBoundary(
+        projectPath
       );
-
   }
 
-
-
   async createBackup(): Promise<string> {
-
+    const backupRootPath =
+      ".aurora/backups";
 
     await fs.mkdir(
-      this.backupPath,
+      this.pathBoundary.resolve(
+        backupRootPath
+      ),
       {
-        recursive: true
+        recursive: true,
       }
     );
-
 
     const timestamp =
       new Date()
@@ -42,60 +43,64 @@ export class BackupManager {
           "-"
         );
 
-
-    const backupFolder =
+    const backupFolderPath =
       path.join(
-        this.backupPath,
+        backupRootPath,
         timestamp
       );
 
+    const backupFolder =
+      this.pathBoundary.resolve(
+        backupFolderPath
+      );
 
     await fs.mkdir(
       backupFolder,
       {
-        recursive: true
+        recursive: true,
       }
     );
 
-
-    const files = [
-      "package.json",
-      ".env.example",
-      ".aurora/cache.json"
-    ];
-
-
-    for (
-      const file of files
-    ) {
-
-
-      try {
-
-        await fs.copyFile(
-          path.join(
-            this.projectPath,
-            file
-          ),
-          path.join(
-            backupFolder,
-            path.basename(file)
-          )
+    for (const file of BACKUP_FILES) {
+      const targetPath =
+        path.join(
+          backupFolderPath,
+          file
         );
 
+      const target =
+        this.pathBoundary.resolve(
+          targetPath
+        );
 
-      } catch {
+      try {
+        await fs.mkdir(
+          path.dirname(target),
+          {
+            recursive: true,
+          }
+        );
 
-        // Ignore missing files
+        await fs.copyFile(
+          this.pathBoundary.resolve(
+            file
+          ),
+          this.pathBoundary.resolve(
+            targetPath
+          )
+        );
+      } catch (error) {
+        const code =
+          (
+            error as NodeJS.ErrnoException
+          ).code;
 
+        if (code !== "ENOENT") {
+          throw error;
+        }
       }
-
     }
 
-
     return backupFolder;
-
   }
-
-
 }

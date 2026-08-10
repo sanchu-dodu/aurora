@@ -1,6 +1,10 @@
 ﻿import fs from "node:fs/promises";
 import path from "node:path";
 
+import {
+  ProjectPathBoundary,
+} from "../security/projectPathBoundary.js";
+
 export class FileTransaction {
   private readonly originalFiles =
     new Map<string, Buffer | null>();
@@ -8,16 +12,25 @@ export class FileTransaction {
   private readonly createdDirectories =
     new Set<string>();
 
+  private readonly pathBoundary:
+    ProjectPathBoundary;
+
   constructor(
-    private readonly operationName =
-      "operation"
-  ) {}
+    private readonly operationName:
+      string,
+    projectPath: string
+  ) {
+    this.pathBoundary =
+      new ProjectPathBoundary(
+        projectPath
+      );
+  }
 
   recordCreatedFile(
     file: string
   ): void {
     const resolvedFile =
-      path.resolve(file);
+      this.validateFile(file);
 
     if (
       !this.originalFiles.has(
@@ -35,7 +48,7 @@ export class FileTransaction {
     file: string
   ): Promise<void> {
     const resolvedFile =
-      path.resolve(file);
+      this.validateFile(file);
 
     if (
       this.originalFiles.has(
@@ -78,7 +91,18 @@ export class FileTransaction {
     directory: string
   ): Promise<void> {
     const resolvedDirectory =
-      path.resolve(directory);
+      this.pathBoundary
+        .validateAbsolutePath(
+          path.resolve(directory),
+          true
+        );
+
+    if (
+      resolvedDirectory ===
+      this.pathBoundary.projectRoot
+    ) {
+      return;
+    }
 
     const missingDirectories:
       string[] = [];
@@ -126,7 +150,10 @@ export class FileTransaction {
     }
 
     await fs.mkdir(
-      resolvedDirectory,
+      this.pathBoundary
+        .validateAbsolutePath(
+          resolvedDirectory
+        ),
       {
         recursive: true,
       }
@@ -168,8 +195,11 @@ export class FileTransaction {
         if (
           originalContent === null
         ) {
+          const validatedFile =
+            this.validateFile(file);
+
           await fs.rm(
-            file,
+            validatedFile,
             {
               force: true,
             }
@@ -182,15 +212,23 @@ export class FileTransaction {
           continue;
         }
 
+        const validatedFile =
+          this.validateFile(file);
+
         await fs.mkdir(
-          path.dirname(file),
+          path.dirname(
+            validatedFile
+          ),
           {
             recursive: true,
           }
         );
 
+        const revalidatedFile =
+          this.validateFile(file);
+
         await fs.writeFile(
-          file,
+          revalidatedFile,
           originalContent
         );
 
@@ -222,7 +260,15 @@ export class FileTransaction {
       const directory of directories
     ) {
       try {
-        await fs.rmdir(directory);
+        const validatedDirectory =
+          this.pathBoundary
+            .validateAbsolutePath(
+              directory
+            );
+
+        await fs.rmdir(
+          validatedDirectory
+        );
       } catch (error) {
         const code =
           (
@@ -246,6 +292,15 @@ export class FileTransaction {
     }
 
     this.commit();
+  }
+
+  private validateFile(
+    file: string
+  ): string {
+    return this.pathBoundary
+      .validateAbsolutePath(
+        path.resolve(file)
+      );
   }
 }
 

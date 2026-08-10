@@ -94,7 +94,8 @@ export async function installFeature(
 
   const transaction =
     new FileTransaction(
-      "feature installation"
+      "feature installation",
+      projectRoot
     );
 
   const context =

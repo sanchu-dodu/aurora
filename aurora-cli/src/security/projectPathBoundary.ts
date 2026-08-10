@@ -88,6 +88,44 @@ export class ProjectPathBoundary {
     return candidate;
   }
 
+  validateAbsolutePath(
+    absolutePath: string,
+    allowProjectRoot = false
+  ): string {
+    if (
+      !absolutePath.trim() ||
+      absolutePath.includes("\0") ||
+      !path.isAbsolute(absolutePath)
+    ) {
+      throw unsafePath(
+        absolutePath,
+        "Validated project path must be absolute."
+      );
+    }
+
+    const candidate =
+      path.resolve(absolutePath);
+
+    const relative =
+      path.relative(
+        this.canonicalRoot,
+        candidate
+      );
+
+    if (!relative) {
+      if (allowProjectRoot) {
+        return this.canonicalRoot;
+      }
+
+      throw unsafePath(
+        absolutePath,
+        "Project path must identify a child of the project root."
+      );
+    }
+
+    return this.resolve(relative);
+  }
+
   private assertSafeAncestors(
     segments: string[],
     originalPath: string

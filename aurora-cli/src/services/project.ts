@@ -7,8 +7,11 @@ import type {
 
 import {
   getDefaultProjectTemplateRoot,
-  resolvePathWithinRoot,
 } from "../templates/projectTemplatePaths.js";
+
+import {
+  ProjectPathBoundary,
+} from "../security/projectPathBoundary.js";
 
 import {
   copyTemplate,
@@ -49,9 +52,13 @@ export async function createProject(
       process.cwd()
     );
 
+  const workspaceBoundary =
+    new ProjectPathBoundary(
+      workspaceRoot
+    );
+
   const projectPath =
-    resolvePathWithinRoot(
-      workspaceRoot,
+    workspaceBoundary.resolve(
       config.projectName
     );
 
@@ -81,6 +88,11 @@ export async function createProject(
     projectPath
   );
 
+  const projectBoundary =
+    new ProjectPathBoundary(
+      projectPath
+    );
+
   try {
     await copyTemplate(
       projectPath,
@@ -89,8 +101,7 @@ export async function createProject(
     );
 
     await fs.writeJson(
-      path.join(
-        projectPath,
+      projectBoundary.resolve(
         "aurora.config.json"
       ),
       config,
@@ -123,9 +134,21 @@ export async function createProject(
 
     return projectPath;
   } catch (error) {
-    await fs.remove(
-      projectPath
-    );
+    try {
+      await fs.remove(
+        workspaceBoundary.resolve(
+          config.projectName
+        )
+      );
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [
+          error,
+          cleanupError,
+        ],
+        "Project creation failed and partial output could not be safely removed."
+      );
+    }
 
     console.log("");
     console.log(

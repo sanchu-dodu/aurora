@@ -1,6 +1,9 @@
 import fs from "fs-extra";
-import path from "path";
 import type { ProjectConfig } from "../types/project.js";
+
+import {
+  ProjectPathBoundary,
+} from "../security/projectPathBoundary.js";
 
 export async function createPackageJson(
   projectPath: string,
@@ -18,8 +21,15 @@ export async function createPackageJson(
     }
   };
 
+  const pathBoundary =
+    new ProjectPathBoundary(
+      projectPath
+    );
+
   await fs.writeJson(
-    path.join(projectPath, "package.json"),
+    pathBoundary.resolve(
+      "package.json"
+    ),
     packageJson,
     {
       spaces: 2

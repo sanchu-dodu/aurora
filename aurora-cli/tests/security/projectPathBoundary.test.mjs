@@ -84,6 +84,33 @@ test(
           "component.ts"
         )
       );
+
+      assert.equal(
+        boundary.validateAbsolutePath(
+          join(
+            boundary.projectRoot,
+            "src",
+            "absolute.ts"
+          )
+        ),
+        join(
+          boundary.projectRoot,
+          "src",
+          "absolute.ts"
+        )
+      );
+
+      assert.throws(
+        () =>
+          boundary.validateAbsolutePath(
+            join(
+              boundary.projectRoot,
+              "..",
+              "outside.ts"
+            )
+          ),
+        isUnsafeProjectPath
+      );
     } finally {
       await rm(
         projectRoot,

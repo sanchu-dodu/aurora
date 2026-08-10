@@ -13,16 +13,23 @@ export class FeatureInstallContext {
   private readonly pathBoundary:
     ProjectPathBoundary;
 
+  public readonly transaction:
+    FileTransaction;
+
   constructor(
     projectPath: string,
-    public readonly transaction =
-      new FileTransaction(
-        "feature installation"
-      )
+    transaction?: FileTransaction
   ) {
     this.pathBoundary =
       new ProjectPathBoundary(
         projectPath
+      );
+
+    this.transaction =
+      transaction ??
+      new FileTransaction(
+        "feature installation",
+        this.pathBoundary.projectRoot
       );
   }
 
@@ -56,7 +63,9 @@ export class FeatureInstallContext {
       );
 
     await fs.writeFile(
-      file,
+      this.resolveProjectPath(
+        relativePath
+      ),
       content,
       "utf8"
     );
