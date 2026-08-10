@@ -606,6 +606,37 @@ async function main() {
       "Installed CLI help did not contain the Aurora usage line."
     );
 
+    assertCondition(
+      !/Aurora Runtime|plugin activated/i.test(
+        `${versionResult.stdout}\n${helpResult.stdout}`
+      ),
+      "Installed CLI activated the runtime while handling version or help."
+    );
+
+    const completionResult =
+      await runAurora(
+        consumerRoot,
+        packageJson.name,
+        [
+          "completion",
+          "powershell",
+        ]
+      );
+
+    assertCondition(
+      /Register-ArgumentCompleter/.test(
+        completionResult.stdout
+      ),
+      "Installed CLI did not generate PowerShell completion setup."
+    );
+
+    assertCondition(
+      !/Aurora Runtime|plugin activated/i.test(
+        completionResult.stdout
+      ),
+      "Installed CLI activated the runtime while generating completion setup."
+    );
+
     const templateInfoResult =
       await runAurora(
         consumerRoot,

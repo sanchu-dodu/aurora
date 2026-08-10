@@ -1,7 +1,14 @@
 ﻿import type { Command } from "commander";
 
+export type CommandActivation =
+  | "none"
+  | "runtime";
+
 export interface AuroraCommand {
   readonly id: string;
+
+  readonly activation?:
+    CommandActivation;
 
   register(program: Command): void;
 }
@@ -38,6 +45,13 @@ export function getRegisteredCommandIds():
   return [
     ...registry.keys(),
   ];
+}
+
+export function getCommandActivation(
+  commandId: string
+): CommandActivation {
+  return registry.get(commandId)
+    ?.activation ?? "runtime";
 }
 
 export function registerAllCommands(
