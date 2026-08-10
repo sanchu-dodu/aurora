@@ -100,6 +100,21 @@ test(
         )
       );
 
+      assert.equal(
+        boundary.validateAbsolutePath(
+          join(
+            projectRoot,
+            "src",
+            "lexical-root.ts"
+          )
+        ),
+        join(
+          boundary.projectRoot,
+          "src",
+          "lexical-root.ts"
+        )
+      );
+
       assert.throws(
         () =>
           boundary.validateAbsolutePath(
@@ -114,6 +129,72 @@ test(
     } finally {
       await rm(
         projectRoot,
+        {
+          recursive: true,
+          force: true,
+        }
+      );
+    }
+  }
+);
+
+test(
+  "Project path boundary validates absolute children through the original root alias",
+  async () => {
+    const sandbox =
+      await mkdtemp(
+        join(
+          tmpdir(),
+          "aurora-safe-path-alias-"
+        )
+      );
+
+    const projectRoot =
+      join(sandbox, "project");
+
+    const aliasRoot =
+      join(sandbox, "project-alias");
+
+    await mkdir(projectRoot);
+
+    try {
+      await symlink(
+        projectRoot,
+        aliasRoot,
+        process.platform === "win32"
+          ? "junction"
+          : "dir"
+      );
+
+      const boundary =
+        new ProjectPathBoundary(
+          aliasRoot
+        );
+
+      assert.equal(
+        boundary.validateAbsolutePath(
+          join(
+            aliasRoot,
+            "src",
+            "alias.ts"
+          )
+        ),
+        join(
+          boundary.projectRoot,
+          "src",
+          "alias.ts"
+        )
+      );
+    } finally {
+      await rm(
+        aliasRoot,
+        {
+          force: true,
+        }
+      );
+
+      await rm(
+        sandbox,
         {
           recursive: true,
           force: true,
