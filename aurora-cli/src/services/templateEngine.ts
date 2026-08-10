@@ -34,14 +34,20 @@ import {
   walkDirectory,
 } from "./walker.js";
 
+import {
+  ProjectPathBoundary,
+} from "../security/projectPathBoundary.js";
+
 export async function copyTemplate(
   projectPath: string,
   config: ProjectConfig,
   templateRoot =
     getDefaultProjectTemplateRoot()
 ): Promise<void> {
-  const projectRoot =
-    path.resolve(projectPath);
+  const pathBoundary =
+    new ProjectPathBoundary(
+      projectPath
+    );
 
   const templateDirectory =
     getTemplateDirectory(config);
@@ -127,8 +133,7 @@ export async function copyTemplate(
       );
 
     const destination =
-      resolvePathWithinRoot(
-        projectRoot,
+      pathBoundary.resolve(
         outputRelativePath
       );
 
@@ -150,8 +155,13 @@ export async function copyTemplate(
         config
       );
 
+    const validatedDestination =
+      pathBoundary.resolve(
+        outputRelativePath
+      );
+
     await fs.writeFile(
-      destination,
+      validatedDestination,
       content,
       "utf8"
     );

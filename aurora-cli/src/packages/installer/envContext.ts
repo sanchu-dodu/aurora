@@ -51,7 +51,9 @@ export class EnvContext {
     }
 
     await fs.writeFile(
-      file,
+      this.pathBoundary.resolve(
+        ".env.example"
+      ),
       content
     );
 

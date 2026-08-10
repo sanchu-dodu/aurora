@@ -1,5 +1,8 @@
 import fs from "fs-extra";
-import path from "path";
+
+import {
+  ProjectPathBoundary,
+} from "../security/projectPathBoundary.js";
 
 export async function createTsConfig(
   projectPath: string
@@ -17,8 +20,15 @@ export async function createTsConfig(
     include: ["src"],
   };
 
+  const pathBoundary =
+    new ProjectPathBoundary(
+      projectPath
+    );
+
   await fs.writeJson(
-    path.join(projectPath, "tsconfig.json"),
+    pathBoundary.resolve(
+      "tsconfig.json"
+    ),
     tsconfig,
     {
       spaces: 2,

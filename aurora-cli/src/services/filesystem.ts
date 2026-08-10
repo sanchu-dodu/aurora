@@ -1,5 +1,8 @@
 import fs from "fs-extra";
-import path from "path";
+
+import {
+  ProjectPathBoundary,
+} from "../security/projectPathBoundary.js";
 
 export async function createProjectStructure(
   projectPath: string
@@ -14,7 +17,16 @@ export async function createProjectStructure(
     "src/types",
   ];
 
+  const pathBoundary =
+    new ProjectPathBoundary(
+      projectPath
+    );
+
   for (const folder of folders) {
-    await fs.ensureDir(path.join(projectPath, folder));
+    await fs.ensureDir(
+      pathBoundary.resolve(folder)
+    );
+
+    pathBoundary.resolve(folder);
   }
 }

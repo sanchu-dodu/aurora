@@ -37,7 +37,9 @@ export class ConfigContext {
     updater(json);
 
     await fs.writeFile(
-      packageJsonPath,
+      this.pathBoundary.resolve(
+        "package.json"
+      ),
       JSON.stringify(
         json,
         null,

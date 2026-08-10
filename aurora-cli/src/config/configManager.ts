@@ -6,16 +6,23 @@ import {
   defaultConfig,
 } from "./defaults.js";
 
+import {
+  ProjectPathBoundary,
+} from "../security/projectPathBoundary.js";
+
 const CONFIG_DIRECTORY = ".aurora";
 
 const CONFIG_FILE = "config.json";
 
 
 function getConfigPath(): string {
-  return path.join(
-    process.cwd(),
-    CONFIG_DIRECTORY,
-    CONFIG_FILE
+  return new ProjectPathBoundary(
+    process.cwd()
+  ).resolve(
+    path.join(
+      CONFIG_DIRECTORY,
+      CONFIG_FILE
+    )
   );
 }
 
@@ -42,8 +49,9 @@ export async function saveConfig(
 ): Promise<void> {
 
   const directory =
-    path.join(
-      process.cwd(),
+    new ProjectPathBoundary(
+      process.cwd()
+    ).resolve(
       CONFIG_DIRECTORY
     );
 

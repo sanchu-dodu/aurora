@@ -13,6 +13,9 @@ const PATH_SUGGESTION =
   "Use a relative path that stays inside the project and does not pass through a symbolic link or junction.";
 
 export class ProjectPathBoundary {
+  private readonly lexicalRoot:
+    string;
+
   private readonly canonicalRoot:
     string;
 
@@ -29,6 +32,9 @@ export class ProjectPathBoundary {
 
     const resolvedRoot =
       path.resolve(projectPath);
+
+    this.lexicalRoot =
+      resolvedRoot;
 
     try {
       const information =
@@ -86,6 +92,55 @@ export class ProjectPathBoundary {
     );
 
     return candidate;
+  }
+
+  validateAbsolutePath(
+    absolutePath: string,
+    allowProjectRoot = false
+  ): string {
+    if (
+      !absolutePath.trim() ||
+      absolutePath.includes("\0") ||
+      !path.isAbsolute(absolutePath)
+    ) {
+      throw unsafePath(
+        absolutePath,
+        "Validated project path must be absolute."
+      );
+    }
+
+    const candidate =
+      path.resolve(absolutePath);
+
+    const relative =
+      relativeWithinRoot(
+        this.canonicalRoot,
+        candidate
+      ) ??
+      relativeWithinRoot(
+        this.lexicalRoot,
+        candidate
+      );
+
+    if (relative === undefined) {
+      throw unsafePath(
+        absolutePath,
+        "Project path escapes the project root."
+      );
+    }
+
+    if (!relative) {
+      if (allowProjectRoot) {
+        return this.canonicalRoot;
+      }
+
+      throw unsafePath(
+        absolutePath,
+        "Project path must identify a child of the project root."
+      );
+    }
+
+    return this.resolve(relative);
   }
 
   private assertSafeAncestors(
@@ -146,6 +201,32 @@ export class ProjectPathBoundary {
       }
     }
   }
+}
+
+function relativeWithinRoot(
+  projectRoot: string,
+  candidate: string
+): string | undefined {
+  const relative =
+    path.relative(
+      projectRoot,
+      candidate
+    );
+
+  if (
+    relative === "" ||
+    (
+      relative !== ".." &&
+      !relative.startsWith(
+        `..${path.sep}`
+      ) &&
+      !path.isAbsolute(relative)
+    )
+  ) {
+    return relative;
+  }
+
+  return undefined;
 }
 
 function validateRelativePath(

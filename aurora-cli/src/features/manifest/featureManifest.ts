@@ -98,7 +98,9 @@ export async function saveManifest(
   }
 
   await fs.writeFile(
-    file,
+    getManifestPath(
+      projectPath
+    ),
     JSON.stringify(
       manifest,
       null,

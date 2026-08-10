@@ -3,6 +3,10 @@ import path from "path";
 
 import type { ProjectConfig } from "../types/project.js";
 
+import {
+  ProjectPathBoundary,
+} from "../security/projectPathBoundary.js";
+
 export async function createReadme(
   projectPath: string,
   config: ProjectConfig
@@ -22,8 +26,15 @@ export async function createReadme(
     .replace(/{{LANGUAGE}}/g, config.language)
     .replace(/{{PACKAGE_MANAGER}}/g, config.packageManager);
 
+  const pathBoundary =
+    new ProjectPathBoundary(
+      projectPath
+    );
+
   await fs.writeFile(
-    path.join(projectPath, "README.md"),
+    pathBoundary.resolve(
+      "README.md"
+    ),
     content
   );
 }

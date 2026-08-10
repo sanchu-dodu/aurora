@@ -5,6 +5,7 @@ import {
   access,
   mkdtemp,
   readFile,
+  realpath,
   rm,
 } from "node:fs/promises";
 
@@ -101,18 +102,23 @@ test(
         true
       );
 
+      const canonicalProjectPath =
+        await realpath(projectPath);
+
       assert.deepEqual(
         operations,
         [
           {
             type:
               "dependencies",
-            projectPath,
+            projectPath:
+              canonicalProjectPath,
             packageManager: "npm",
           },
           {
             type: "git",
-            projectPath,
+            projectPath:
+              canonicalProjectPath,
           },
         ]
       );

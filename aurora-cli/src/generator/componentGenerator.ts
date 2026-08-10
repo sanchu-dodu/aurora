@@ -47,18 +47,16 @@ export class ComponentGenerator {
         }
       );
 
-    const projectRoot =
-      path.resolve(projectPath);
-
     const outputPath =
-      resolveWithinRoot(
-        projectRoot,
+      path.join(
         metadata.output,
         `${componentName}${metadata.extension}`
       );
 
     const generator =
-      new Generator();
+      new Generator(
+        projectPath
+      );
 
     await generator.generateFile(
       outputPath,

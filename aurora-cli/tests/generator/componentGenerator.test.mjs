@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 
 import {
   access,
+  mkdir,
   mkdtemp,
   readFile,
   rm,
+  symlink,
 } from "node:fs/promises";
 
 import { tmpdir } from "node:os";
@@ -31,6 +33,10 @@ import {
 import {
   ComponentGenerator,
 } from "../../dist/generator/componentGenerator.js";
+
+import {
+  ErrorCodes,
+} from "../../dist/errors/errorCodes.js";
 
 async function exists(filePath) {
   try {
@@ -210,6 +216,95 @@ test(
     } finally {
       await rm(
         projectRoot,
+        {
+          recursive: true,
+          force: true,
+        }
+      );
+    }
+  }
+);
+
+test(
+  "ComponentGenerator rejects a symbolic-link or junction escape",
+  async () => {
+    const sandbox =
+      await mkdtemp(
+        join(
+          tmpdir(),
+          "aurora-component-link-"
+        )
+      );
+
+    const projectRoot =
+      join(sandbox, "project");
+
+    const outsideRoot =
+      join(sandbox, "outside");
+
+    const linkPath =
+      join(
+        projectRoot,
+        "src",
+        "components"
+      );
+
+    await mkdir(
+      join(projectRoot, "src"),
+      {
+        recursive: true,
+      }
+    );
+
+    await mkdir(outsideRoot);
+
+    try {
+      await symlink(
+        outsideRoot,
+        linkPath,
+        process.platform === "win32"
+          ? "junction"
+          : "dir"
+      );
+
+      await discoverTemplates();
+
+      await assert.rejects(
+        new ComponentGenerator()
+          .generate(
+            projectRoot,
+            "Escaped"
+          ),
+        (error) => {
+          assert.equal(
+            error.code,
+            ErrorCodes
+              .UNSAFE_PROJECT_PATH
+          );
+
+          return true;
+        }
+      );
+
+      assert.equal(
+        await exists(
+          join(
+            outsideRoot,
+            "Escaped.tsx"
+          )
+        ),
+        false
+      );
+    } finally {
+      await rm(
+        linkPath,
+        {
+          force: true,
+        }
+      );
+
+      await rm(
+        sandbox,
         {
           recursive: true,
           force: true,
