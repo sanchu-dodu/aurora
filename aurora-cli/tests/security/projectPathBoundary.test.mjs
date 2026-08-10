@@ -78,7 +78,7 @@ test(
           "src\\nested/component.ts"
         ),
         join(
-          projectRoot,
+          boundary.projectRoot,
           "src",
           "nested",
           "component.ts"
