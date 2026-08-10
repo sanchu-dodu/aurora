@@ -12,6 +12,12 @@ The application currently focuses on content discovery and trailer playback. TMD
 
 Aurora does not obtain or host full copyrighted movies from TMDB.
 
+## Roadmap
+
+Aurora CLI is evolving into the secure execution engine and local control plane for Aurora Technologies, including Aurora Stream, Aurora Security, Aurora AI, Aurora Cloud, and future business solution packs.
+
+See the [Aurora Technologies Platform Roadmap](ROADMAP.md) for the current architecture, security gates, product tracks, and phased delivery plan.
+
 ## Features
 
 - Trending, popular, top-rated, upcoming, and now-playing discovery
