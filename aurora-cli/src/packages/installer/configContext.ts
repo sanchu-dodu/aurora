@@ -1,11 +1,14 @@
 import fs from "fs/promises";
-import path from "path";
 import { TransactionManager } from "./transactionManager.js";
+
+import {
+  ProjectPathBoundary,
+} from "../../security/projectPathBoundary.js";
 
 export class ConfigContext {
 
   constructor(
-    private projectPath: string,
+    private pathBoundary: ProjectPathBoundary,
     private transaction: TransactionManager
   ) {}
 
@@ -13,10 +16,10 @@ export class ConfigContext {
     updater: (json: any) => void
   ): Promise<void> {
 
-    const packageJsonPath = path.join(
-      this.projectPath,
-      "package.json"
-    );
+    const packageJsonPath =
+      this.pathBoundary.resolve(
+        "package.json"
+      );
 
     await this.transaction.recordModifiedFile(
       packageJsonPath

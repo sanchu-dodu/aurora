@@ -5,6 +5,10 @@ import { ConfigContext } from "./configContext.js";
 import { EnvContext } from "./envContext.js";
 import { TransactionManager } from "./transactionManager.js";
 
+import {
+  ProjectPathBoundary,
+} from "../../security/projectPathBoundary.js";
+
 export class InstallerContext {
   public readonly transaction: TransactionManager;
 
@@ -12,27 +16,43 @@ export class InstallerContext {
 
   public readonly env: EnvContext;
 
+  private readonly pathBoundary:
+    ProjectPathBoundary;
+
   constructor(
-    private readonly projectPath: string
+    projectPath: string
   ) {
+    this.pathBoundary =
+      new ProjectPathBoundary(
+        projectPath
+      );
+
     this.transaction =
       new TransactionManager();
 
     this.config =
       new ConfigContext(
-        projectPath,
+        this.pathBoundary,
         this.transaction
       );
 
     this.env =
       new EnvContext(
-        projectPath,
+        this.pathBoundary,
         this.transaction
       );
   }
 
   getProjectPath(): string {
-    return this.projectPath;
+    return this.pathBoundary
+      .projectRoot;
+  }
+
+  resolveProjectPath(
+    relativePath: string
+  ): string {
+    return this.pathBoundary
+      .resolve(relativePath);
   }
 
   log(message: string): void {
@@ -43,10 +63,10 @@ export class InstallerContext {
     filePath: string,
     content: string
   ): Promise<void> {
-    const fullPath = path.join(
-      this.projectPath,
-      filePath
-    );
+    const fullPath =
+      this.resolveProjectPath(
+        filePath
+      );
 
     await this.transaction.recordModifiedFile(
       fullPath

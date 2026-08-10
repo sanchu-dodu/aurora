@@ -1,11 +1,14 @@
 import fs from "fs/promises";
-import path from "path";
 import { TransactionManager } from "./transactionManager.js";
+
+import {
+  ProjectPathBoundary,
+} from "../../security/projectPathBoundary.js";
 
 export class EnvContext {
 
   constructor(
-    private projectPath: string,
+    private pathBoundary: ProjectPathBoundary,
     private transaction: TransactionManager
   ) {}
 
@@ -13,10 +16,10 @@ export class EnvContext {
     variables: string[]
   ): Promise<void> {
 
-    const file = path.join(
-      this.projectPath,
-      ".env.example"
-    );
+    const file =
+      this.pathBoundary.resolve(
+        ".env.example"
+      );
 
     await this.transaction.recordModifiedFile(
       file

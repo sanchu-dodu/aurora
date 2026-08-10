@@ -1,5 +1,3 @@
-﻿import path from "node:path";
-
 import { resolveDependencies } from "../dependencyResolver.js";
 import { InstallerContext } from "./installerContext.js";
 import { validatePackage } from "../packageValidator.js";
@@ -132,16 +130,13 @@ export class PackageInstaller {
       console.log("");
 
       await context.transaction.recordModifiedFile(
-        path.join(
-          this.projectRoot,
-          ".aurora",
-          "cache.json"
+        context.resolveProjectPath(
+          ".aurora/cache.json"
         )
       );
 
       await context.transaction.recordModifiedFile(
-        path.join(
-          this.projectRoot,
+        context.resolveProjectPath(
           "aurora.lock"
         )
       );

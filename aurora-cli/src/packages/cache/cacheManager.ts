@@ -3,6 +3,10 @@ import path from "node:path";
 
 import { WriteLock } from "../synchronization/writeLock.js";
 
+import {
+  ProjectPathBoundary,
+} from "../../security/projectPathBoundary.js";
+
 export interface CachedPackage {
   version: string;
   installedAt: string;
@@ -11,18 +15,24 @@ export interface CachedPackage {
 }
 
 export class CacheManager {
-  private readonly cacheFile: string;
+  private readonly pathBoundary:
+    ProjectPathBoundary;
 
   private readonly lock =
     new WriteLock();
 
   constructor(
-    private readonly projectPath: string
+    projectPath: string
   ) {
-    this.cacheFile = path.join(
-      projectPath,
-      ".aurora",
-      "cache.json"
+    this.pathBoundary =
+      new ProjectPathBoundary(
+        projectPath
+      );
+  }
+
+  private get cacheFile(): string {
+    return this.pathBoundary.resolve(
+      ".aurora/cache.json"
     );
   }
 

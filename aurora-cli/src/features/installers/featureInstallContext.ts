@@ -5,9 +5,13 @@ import {
   FileTransaction,
 } from "../../core/fileTransaction.js";
 
+import {
+  ProjectPathBoundary,
+} from "../../security/projectPathBoundary.js";
+
 export class FeatureInstallContext {
-  private readonly projectRoot:
-    string;
+  private readonly pathBoundary:
+    ProjectPathBoundary;
 
   constructor(
     projectPath: string,
@@ -16,52 +20,22 @@ export class FeatureInstallContext {
         "feature installation"
       )
   ) {
-    this.projectRoot =
-      path.resolve(projectPath);
+    this.pathBoundary =
+      new ProjectPathBoundary(
+        projectPath
+      );
   }
 
   getProjectPath(): string {
-    return this.projectRoot;
+    return this.pathBoundary
+      .projectRoot;
   }
 
   resolveProjectPath(
     relativePath: string
   ): string {
-    if (
-      !relativePath.trim() ||
-      path.isAbsolute(relativePath)
-    ) {
-      throw new Error(
-        `Invalid feature path '${relativePath}'.`
-      );
-    }
-
-    const candidate =
-      path.resolve(
-        this.projectRoot,
-        relativePath
-      );
-
-    const relative =
-      path.relative(
-        this.projectRoot,
-        candidate
-      );
-
-    const escapesProject =
-      relative === ".." ||
-      relative.startsWith(
-        `..${path.sep}`
-      ) ||
-      path.isAbsolute(relative);
-
-    if (escapesProject) {
-      throw new Error(
-        `Feature path escapes the project root: ${relativePath}`
-      );
-    }
-
-    return candidate;
+    return this.pathBoundary
+      .resolve(relativePath);
   }
 
   async writeFile(

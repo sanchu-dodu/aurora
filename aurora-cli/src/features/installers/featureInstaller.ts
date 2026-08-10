@@ -122,8 +122,7 @@ export async function installFeature(
       dependencies.length > 0
     ) {
       const packageJson =
-        path.join(
-          projectRoot,
+        context.resolveProjectPath(
           "package.json"
         );
 
@@ -139,12 +138,10 @@ export async function installFeature(
 
       const packageFiles = [
         packageJson,
-        path.join(
-          projectRoot,
+        context.resolveProjectPath(
           "package-lock.json"
         ),
-        path.join(
-          projectRoot,
+        context.resolveProjectPath(
           "npm-shrinkwrap.json"
         ),
       ];
