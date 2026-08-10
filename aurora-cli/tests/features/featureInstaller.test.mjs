@@ -132,6 +132,7 @@ test(
         commands[0].args,
         [
           "install",
+          "--",
           "demo-package",
         ]
       );

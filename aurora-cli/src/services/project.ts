@@ -22,6 +22,10 @@ import {
 } from "./installer.js";
 
 import {
+  getPackageManager,
+} from "./packageManagerService.js";
+
+import {
   initializeGit,
 } from "./git.js";
 
@@ -94,11 +98,12 @@ export async function createProject(
     );
 
   try {
-    await copyTemplate(
-      projectPath,
-      config,
-      templateRoot
-    );
+    const generatedFiles =
+      await copyTemplate(
+        projectPath,
+        config,
+        templateRoot
+      );
 
     await fs.writeJson(
       projectBoundary.resolve(
@@ -110,6 +115,10 @@ export async function createProject(
       }
     );
 
+    generatedFiles.push(
+      "aurora.config.json"
+    );
+
     if (
       config.installDependencies
     ) {
@@ -117,13 +126,36 @@ export async function createProject(
         projectPath,
         config.packageManager
       );
+
+      const manager =
+        getPackageManager(
+          config.packageManager
+        );
+
+      for (
+        const lockFile
+        of manager.lockFiles
+      ) {
+        if (
+          await fs.pathExists(
+            projectBoundary.resolve(
+              lockFile
+            )
+          )
+        ) {
+          generatedFiles.push(
+            lockFile
+          );
+        }
+      }
     }
 
     if (
       config.initializeGit
     ) {
       await gitInitializer(
-        projectPath
+        projectPath,
+        generatedFiles
       );
     }
 

@@ -1,8 +1,4 @@
 import {
-  exec,
-} from "node:child_process";
-
-import {
   logger,
 } from "../core/logger.js";
 
@@ -14,24 +10,46 @@ import {
   ErrorCodes,
 } from "../errors/errorCodes.js";
 
+import {
+  runProcess,
+} from "./processService.js";
+
+import type {
+  SafeProcessCommand,
+} from "./processService.js";
+
+export interface DoctorCommand {
+  command: SafeProcessCommand;
+
+  args: readonly string[];
+}
+
 export type DoctorChecker =
   (
-    command: string
+    command: DoctorCommand
   ) => Promise<boolean>;
 
 async function checkCommand(
-  command: string
+  command: DoctorCommand
 ): Promise<boolean> {
-  return new Promise(
-    (resolve) => {
-      exec(
-        command,
-        (error) => {
-          resolve(!error);
-        }
-      );
-    }
-  );
+  try {
+    const result =
+      await runProcess({
+        command:
+          command.command,
+        args:
+          command.args,
+        cwd: process.cwd(),
+        output: "ignore",
+        timeoutMs: 10_000,
+        rejectOnNonZero:
+          false,
+      });
+
+    return result.exitCode === 0;
+  } catch {
+    return false;
+  }
 }
 
 export async function runDoctor(
@@ -51,20 +69,35 @@ export async function runDoctor(
   const checks = [
     {
       name: "Git",
-      command:
-        "git --version",
+      process: {
+        command: "git",
+        args: [
+          "--version",
+        ],
+      },
     },
     {
       name: "Node.js",
-      command:
-        "node --version",
+      process: {
+        command: "node",
+        args: [
+          "--version",
+        ],
+      },
     },
     {
       name: "npm",
-      command:
-        "npm --version",
+      process: {
+        command: "npm",
+        args: [
+          "--version",
+        ],
+      },
     },
-  ];
+  ] satisfies Array<{
+    name: string;
+    process: DoctorCommand;
+  }>;
 
   const failedChecks:
     string[] = [];
@@ -75,7 +108,7 @@ export async function runDoctor(
   ) {
     const ok =
       await checker(
-        checkItem.command
+        checkItem.process
       );
 
     if (ok) {
