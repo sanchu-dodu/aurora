@@ -1,10 +1,11 @@
-﻿import { Command } from "commander";
+import { Command } from "commander";
 
 import { registerCommand } from "../core/commandRegistry.js";
 import { doctorCommand } from "./doctor.js";
 
 registerCommand({
   id: "doctor",
+  activation: "none",
   register(program: Command) {
     program
       .command("doctor")

@@ -1,4 +1,4 @@
-﻿import test from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 
 import { Command } from "commander";
@@ -80,15 +80,23 @@ test(
 );
 
 test(
-  "Planning commands bypass runtime activation",
+  "Command registry applies conservative top-level activation defaults",
   () => {
-    const passiveCommands =
-      new Set([
-        "apply",
-        "completion",
-        "config",
-        "plan",
-      ]);
+    const expectedActivations = {
+      apply: "none",
+      completion: "none",
+      config: "none",
+      doctor: "none",
+      feature: "runtime",
+      generate: "runtime",
+      init: "runtime",
+      list: "catalog",
+      package: "runtime",
+      plan: "none",
+      plugin: "catalog",
+      recovery: "runtime",
+      template: "runtime",
+    };
 
     for (
       const commandId
@@ -98,16 +106,165 @@ test(
         getCommandActivation(
           commandId
         ),
-        passiveCommands.has(
+        expectedActivations[
           commandId
-        )
-          ? "none"
-          : "runtime"
+        ]
+      );
+    }
+
+    assert.equal(
+      getCommandActivation(
+        "not-registered"
+      ),
+      "runtime"
+    );
+  }
+);
+
+test(
+  "Read-only mixed subcommands use none or catalog while mutations stay runtime",
+  () => {
+    const readOnlyPolicies = [
+      [
+        "template",
+        ["info"],
+        "catalog",
+      ],
+      [
+        "template",
+        ["search"],
+        "catalog",
+      ],
+      [
+        "feature",
+        ["installed"],
+        "none",
+      ],
+      [
+        "feature",
+        ["list"],
+        "catalog",
+      ],
+      [
+        "generate",
+        ["list"],
+        "catalog",
+      ],
+      [
+        "package",
+        ["info"],
+        "catalog",
+      ],
+      [
+        "package",
+        ["list"],
+        "catalog",
+      ],
+      [
+        "package",
+        ["manifest"],
+        "catalog",
+      ],
+      [
+        "package",
+        ["resolve"],
+        "catalog",
+      ],
+      [
+        "package",
+        ["search"],
+        "catalog",
+      ],
+      [
+        "package",
+        ["tree"],
+        "catalog",
+      ],
+      [
+        "package",
+        ["verify"],
+        "catalog",
+      ],
+      [
+        "recovery",
+        ["list"],
+        "none",
+      ],
+    ];
+
+    for (
+      const [
+        commandId,
+        path,
+        expectedActivation,
+      ] of readOnlyPolicies
+    ) {
+      assert.equal(
+        getCommandActivation(
+          commandId,
+          path
+        ),
+        expectedActivation,
+        `${commandId} ${path.join(" ")}`
+      );
+    }
+
+    const mutationPolicies = [
+      [
+        "template",
+        ["install"],
+      ],
+      [
+        "feature",
+        ["install"],
+      ],
+      [
+        "generate",
+        ["component"],
+      ],
+      [
+        "package",
+        ["install"],
+      ],
+      [
+        "package",
+        ["update"],
+      ],
+      [
+        "package",
+        ["uninstall"],
+      ],
+      [
+        "package",
+        ["repair"],
+      ],
+      [
+        "package",
+        ["publish"],
+      ],
+      [
+        "recovery",
+        ["rollback"],
+      ],
+    ];
+
+    for (
+      const [
+        commandId,
+        path,
+      ] of mutationPolicies
+    ) {
+      assert.equal(
+        getCommandActivation(
+          commandId,
+          path
+        ),
+        "runtime",
+        `${commandId} ${path.join(" ")}`
       );
     }
   }
 );
-
 test(
   "Command registry builds a unique top-level command tree",
   () => {

@@ -467,21 +467,125 @@ test(
         missingArgument
       );
 
-      await assert.rejects(
-        executeCli(
+      const readOnlyInvocations = [
+        [
+          "template",
+          "search",
+          "anything",
+        ],
+        [
+          "feature",
+          "list",
+        ],
+        [
+          "generate",
+          "list",
+        ],
+        [
+          "package",
+          "list",
+        ],
+        [
+          "plugin",
+          "list",
+        ],
+        [
+          "recovery",
+          "list",
+        ],
+      ];
+
+      for (
+        const args
+        of readOnlyInvocations
+      ) {
+        const result =
+          await runCli(
+            args,
+            workspaceRoot
+          );
+
+        assert.equal(
+          result.code,
+          0,
+          `Expected '${args.join(" ")}' to succeed.
+STDOUT:
+${result.stdout}
+STDERR:
+${result.stderr}`
+        );
+
+        assertNoActivation(
+          result
+        );
+      }
+
+      const pluginList =
+        await runCli(
           [
-            process.execPath,
-            "aurora",
-            "template",
-            "search",
-            "anything",
+            "plugin",
+            "list",
           ],
-          new AuroraCliActivation({
-            packageRoot:
-              packagesRoot,
-          })
-        ),
-        /PACKAGE_ACTIVATION_TRIPWIRE/
+          workspaceRoot
+        );
+
+      assert.equal(
+        pluginList.code,
+        0
+      );
+
+      assert.match(
+        pluginList.stdout,
+        /Authentication\s+\(1\.0\.0\)/
+      );
+
+      assert.match(
+        pluginList.stdout,
+        /Hello Extension\s+\(1\.0\.0\)/
+      );
+
+      assertNoActivation(
+        pluginList
+      );
+
+      const activationCalls = [];
+
+      const activationProbe = {
+        async prepareCatalog() {
+          activationCalls.push(
+            "catalog"
+          );
+        },
+
+        async activate() {
+          activationCalls.push(
+            "runtime"
+          );
+        },
+
+        async shutdown() {
+          activationCalls.push(
+            "shutdown"
+          );
+        },
+      };
+
+      await executeCli(
+        [
+          process.execPath,
+          "aurora",
+          "template",
+          "search",
+          "anything",
+        ],
+        activationProbe
+      );
+
+      assert.deepEqual(
+        activationCalls,
+        [
+          "catalog",
+        ]
       );
     } finally {
       await rm(

@@ -1,29 +1,24 @@
 import type {
-  AuroraPlugin
+  AuroraPlugin,
 } from "../plugin.js";
 
-export const authPlugin: AuroraPlugin = {
+import {
+  authPluginMetadata,
+} from "./authPluginMetadata.js";
 
-  id: "auth",
+export const authPlugin:
+  AuroraPlugin = {
+    ...authPluginMetadata,
 
-  name: "Authentication",
+    async activate() {
+      console.log(
+        "✔ Authentication plugin activated."
+      );
+    },
 
-  version: "1.0.0",
-
-  async activate() {
-
-    console.log(
-      "✔ Authentication plugin activated."
-    );
-
-  },
-
-  async deactivate() {
-
-    console.log(
-      "Authentication plugin stopped."
-    );
-
-  }
-
-};
+    async deactivate() {
+      console.log(
+        "Authentication plugin stopped."
+      );
+    },
+  };
