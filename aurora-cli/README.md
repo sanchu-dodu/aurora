@@ -4,7 +4,7 @@ Aurora CLI is a command-line toolkit for creating, extending, validating, and ma
 
 ## Requirements
 
-- Node.js 22 or newer
+- Node.js 22.15 or newer
 - npm
 - Git is recommended
 
@@ -110,6 +110,14 @@ Failed commands return a non-zero process exit code so scripts and CI systems ca
 Aurora packages use a strict, versioned trust contract. Before installation, Aurora validates package identity, semantic-version compatibility, publisher and provenance metadata, dependencies and conflicts, requested capabilities, declared files and migrations, platform support, lifecycle state, and SHA-256 artifact integrity.
 
 See [Package Manifest v1](docs/package-manifest-v1.md) for the complete format, capability list, and digest algorithm.
+
+## Extension worker prototype
+
+The bundled Hello extension runs outside the main Aurora process through the Extension Worker v1 prototype. Aurora validates a strict manifest, scrubs inherited environment data, brokers declared capabilities, and enforces time, memory, output, and per-extension concurrency limits.
+
+The prototype currently allows only brokered output by default. Direct filesystem, network, subprocess, worker-thread, native-addon, WASI, external-package, and out-of-root import access fail closed. This boundary currently covers the bundled sample extension; package installers, hooks, migrations, and arbitrary third-party plugins have not yet been migrated.
+
+See [Extension Worker v1](docs/extension-worker-v1.md) for the contract, trust model, limits, supported capabilities, and current non-goals.
 
 ## Development
 

@@ -64,7 +64,7 @@ See the [Aurora Technologies Platform Roadmap](ROADMAP.md) for the current archi
 
 ### Aurora CLI
 
-- Node.js 22 or newer
+- Node.js 22.15 or newer
 - TypeScript
 - Commander
 - Chalk

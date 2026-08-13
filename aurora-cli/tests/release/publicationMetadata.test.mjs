@@ -60,7 +60,7 @@ test(
 
     assert.equal(
       packageJson.engines.node,
-      ">=22"
+      ">=22.15.0"
     );
 
     assert.equal(

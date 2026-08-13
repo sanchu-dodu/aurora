@@ -376,6 +376,11 @@ async function verifyInstalledPackage(
     "packages/auth/manifest.json",
     "docs/package-manifest-v1.md",
     "docs/operation-plan-v1.md",
+    "docs/extension-worker-v1.md",
+    "dist/plugins/helloExtension.js",
+    "dist/plugins/helloExtension.manifest.json",
+    "dist/runtime/extensions/extensionWorkerHost.js",
+    "dist/runtime/extensions/extensionWorkerRuntime.js",
     "templates/projects/nextjs/template.json",
     "templates/generators/react/component.json",
   ];
