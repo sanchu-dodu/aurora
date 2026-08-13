@@ -1,4 +1,4 @@
-﻿import { Command } from "commander";
+import { Command } from "commander";
 
 import { registerCommand } from "../core/commandRegistry.js";
 
@@ -19,6 +19,15 @@ import {
 
 registerCommand({
   id: "package",
+  subcommandActivations: {
+    info: "catalog",
+    list: "catalog",
+    manifest: "catalog",
+    resolve: "catalog",
+    search: "catalog",
+    tree: "catalog",
+    verify: "catalog",
+  },
 
   register(program: Command): void {
 

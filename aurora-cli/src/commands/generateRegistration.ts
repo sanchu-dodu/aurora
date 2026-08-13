@@ -1,9 +1,12 @@
-﻿import { Command } from "commander";
+import { Command } from "commander";
 
 import { registerCommand } from "../core/commandRegistry.js";
 
 registerCommand({
   id: "generate",
+  subcommandActivations: {
+    list: "catalog",
+  },
 
   register(program: Command): void {
 

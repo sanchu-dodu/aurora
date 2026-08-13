@@ -20,6 +20,7 @@ import {
 
 registerCommand({
   id: "plugin",
+  activation: "catalog",
 
   register(
     program: Command

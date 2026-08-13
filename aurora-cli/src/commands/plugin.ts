@@ -1,20 +1,32 @@
-﻿import {
-  getPlugins,
-} from "../runtime/plugins/pluginRegistry.js";
+import {
+  getPluginCatalog,
+} from "../runtime/plugins/pluginCatalog.js";
 
-export async function pluginListCommand(): Promise<void> {
+export async function pluginListCommand():
+  Promise<void> {
   console.log("");
-  console.log("Installed Plugins");
-  console.log("=================");
+  console.log(
+    "Installed Plugins"
+  );
+  console.log(
+    "================="
+  );
 
-  const plugins = getPlugins();
+  const plugins =
+    getPluginCatalog();
 
   if (plugins.length === 0) {
-    console.log("No plugins installed.");
+    console.log(
+      "No plugins installed."
+    );
+
     return;
   }
 
-  for (const plugin of plugins) {
+  for (
+    const plugin
+    of plugins
+  ) {
     console.log(
       `✔ ${plugin.name} (${plugin.version})`
     );

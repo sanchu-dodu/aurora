@@ -1,20 +1,12 @@
-import {
-  createContainer,
-} from "../container/bootstrap/createContainer.js";
-
 import type {
   Kernel,
 } from "../kernel/kernel.js";
 
 import {
-  KernelBuilder,
-} from "../kernel/kernelBuilder.js";
-
-import {
   discoverManifests,
 } from "../packages/discovery/discoverManifests.js";
 
-import {
+import type {
   RecoveryService,
 } from "../packages/recovery/recoveryService.js";
 
@@ -26,19 +18,17 @@ import {
   discoverTemplates,
 } from "../templates/registry/templateRegistry.js";
 
-import {
+import type {
   PluginLoader,
 } from "./pluginLoader.js";
 
-import {
-  RuntimeKernelService,
-} from "./runtimeKernelService.js";
-
-import {
+import type {
   RuntimeManager,
 } from "./runtimeManager.js";
 
 export interface CliActivation {
+  prepareCatalog(): Promise<void>;
+
   activate(): Promise<void>;
 
   shutdown(): Promise<void>;
@@ -53,15 +43,20 @@ implements CliActivation {
   private kernel:
     Kernel | undefined;
 
-  private activated = false;
+  private catalogPrepared =
+    false;
+
+  private activated =
+    false;
 
   constructor(
     private readonly options:
       CliActivationOptions = {}
   ) {}
 
-  async activate(): Promise<void> {
-    if (this.activated) {
+  async prepareCatalog():
+    Promise<void> {
+    if (this.catalogPrepared) {
       return;
     }
 
@@ -74,11 +69,38 @@ implements CliActivation {
     );
 
     await discoverTemplates();
+
     registerAllGenerators();
 
     await discoverManifests(
       this.options.packageRoot
     );
+
+    this.catalogPrepared = true;
+  }
+
+  async activate(): Promise<void> {
+    if (this.activated) {
+      return;
+    }
+
+    await this.prepareCatalog();
+
+    const [
+      { createContainer },
+      { KernelBuilder },
+      { RuntimeKernelService },
+    ] = await Promise.all([
+      import(
+        "../container/bootstrap/createContainer.js"
+      ),
+      import(
+        "../kernel/kernelBuilder.js"
+      ),
+      import(
+        "./runtimeKernelService.js"
+      ),
+    ]);
 
     const container =
       createContainer();
@@ -130,7 +152,8 @@ implements CliActivation {
       return;
     }
 
-    const kernel = this.kernel;
+    const kernel =
+      this.kernel;
 
     this.kernel = undefined;
     this.activated = false;

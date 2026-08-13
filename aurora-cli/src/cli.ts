@@ -6,6 +6,7 @@ import {
 import {
   getCommandActivation,
   registerAllCommands,
+  type CommandActivation,
 } from "./core/commandRegistry.js";
 
 import {
@@ -26,59 +27,68 @@ import {
   showBanner,
 } from "./utils/banner.js";
 
-function getTopLevelCommandId(
+function getCommandPath(
   program: Command,
   actionCommand: Command
-): string | undefined {
-  let command = actionCommand;
+): string[] {
+  const path: string[] = [];
+
+  let command:
+    Command | undefined =
+      actionCommand;
 
   while (
-    command.parent &&
-    command.parent !== program
+    command &&
+    command !== program
   ) {
-    command = command.parent;
+    path.unshift(
+      command.name()
+    );
+
+    command =
+      command.parent ??
+      undefined;
   }
 
-  if (command === program) {
-    return undefined;
-  }
-
-  return command.name();
+  return path;
 }
 
-function requiresActivation(
+function resolveCommandActivation(
   program: Command,
   actionCommand: Command
-): boolean {
+): CommandActivation {
   if (
     actionCommand.name() ===
     "help"
   ) {
-    return false;
+    return "none";
   }
 
-  const commandId =
-    getTopLevelCommandId(
+  const commandPath =
+    getCommandPath(
       program,
       actionCommand
     );
 
-  if (commandId === "help") {
-    return false;
-  }
+  const [
+    commandId,
+    ...subcommandPath
+  ] = commandPath;
 
   if (!commandId) {
-    return true;
+    return "runtime";
   }
 
   return getCommandActivation(
-    commandId
-  ) === "runtime";
+    commandId,
+    subcommandPath
+  );
 }
 
 export function createCliProgram():
   Command {
-  const program = new Command();
+  const program =
+    new Command();
 
   program
     .name("aurora")
@@ -120,9 +130,11 @@ export async function runCli(
     );
 
   try {
-    const program = createCliProgram();
+    const program =
+      createCliProgram();
 
-    let activationAttempted = false;
+    let runtimeActivationAttempted =
+      false;
 
     program.hook(
       "preAction",
@@ -130,18 +142,33 @@ export async function runCli(
         _thisCommand,
         actionCommand
       ) => {
-        if (
-          !requiresActivation(
+        const activationMode =
+          resolveCommandActivation(
             program,
             actionCommand
-          )
+          );
+
+        if (
+          activationMode ===
+          "none"
         ) {
+          return;
+        }
+
+        if (
+          activationMode ===
+          "catalog"
+        ) {
+          await activation
+            .prepareCatalog();
+
           return;
         }
 
         showBanner();
 
-        activationAttempted = true;
+        runtimeActivationAttempted =
+          true;
 
         await activation.activate();
       }
@@ -167,7 +194,9 @@ export async function runCli(
       }
     }
 
-    if (activationAttempted) {
+    if (
+      runtimeActivationAttempted
+    ) {
       try {
         await activation.shutdown();
       } catch (shutdownError) {

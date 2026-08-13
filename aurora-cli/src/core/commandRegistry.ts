@@ -1,7 +1,10 @@
-﻿import type { Command } from "commander";
+import type {
+  Command,
+} from "commander";
 
 export type CommandActivation =
   | "none"
+  | "catalog"
   | "runtime";
 
 export interface AuroraCommand {
@@ -9,6 +12,14 @@ export interface AuroraCommand {
 
   readonly activation?:
     CommandActivation;
+
+  readonly subcommandActivations?:
+    Readonly<
+      Record<
+        string,
+        CommandActivation
+      >
+    >;
 
   register(program: Command): void;
 }
@@ -48,16 +59,42 @@ export function getRegisteredCommandIds():
 }
 
 export function getCommandActivation(
-  commandId: string
+  commandId: string,
+  subcommandPath:
+    readonly string[] = []
 ): CommandActivation {
-  return registry.get(commandId)
-    ?.activation ?? "runtime";
+  const command =
+    registry.get(commandId);
+
+  if (!command) {
+    return "runtime";
+  }
+
+  if (subcommandPath.length > 0) {
+    const path =
+      subcommandPath.join(" ");
+
+    const activation =
+      command
+        .subcommandActivations
+        ?.[path];
+
+    if (activation) {
+      return activation;
+    }
+  }
+
+  return command.activation ??
+    "runtime";
 }
 
 export function registerAllCommands(
   program: Command
 ): void {
-  for (const command of registry.values()) {
+  for (
+    const command
+    of registry.values()
+  ) {
     command.register(program);
   }
 }
