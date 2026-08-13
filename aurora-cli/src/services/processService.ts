@@ -13,6 +13,10 @@ import {
   ErrorCodes,
 } from "../errors/errorCodes.js";
 
+import {
+  redactText,
+} from "../security/secretRedactor.js";
+
 const SAFE_COMMANDS = [
   "bun",
   "git",
@@ -382,7 +386,7 @@ export async function runProcess(
           cleanup();
 
           const stdout =
-            redactOutput(
+            redactText(
               Buffer.concat(
                 stdoutChunks
               ).toString("utf8"),
@@ -390,7 +394,7 @@ export async function runProcess(
             );
 
           const stderr =
-            redactOutput(
+            redactText(
               Buffer.concat(
                 stderrChunks
               ).toString("utf8"),
@@ -758,28 +762,6 @@ function collectRedactions(
         right.length -
         left.length
     );
-}
-
-function redactOutput(
-  output: string,
-  redactValues: readonly string[]
-): string {
-  let redacted =
-    output.replace(
-      /([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+):([^\s/@]+)@/giu,
-      "$1[REDACTED]@"
-    );
-
-  for (
-    const value
-    of redactValues
-  ) {
-    redacted =
-      redacted.split(value)
-        .join("[REDACTED]");
-  }
-
-  return redacted;
 }
 
 function resolveInvocation(

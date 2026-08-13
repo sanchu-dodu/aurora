@@ -5,6 +5,10 @@ import {
   ProjectPathBoundary,
 } from "../security/projectPathBoundary.js";
 
+import {
+  redactText,
+} from "../security/secretRedactor.js";
+
 export class FileTransaction {
   private readonly originalFiles =
     new Map<string, Buffer | null>();
@@ -177,7 +181,9 @@ export class FileTransaction {
   async rollback(): Promise<void> {
     console.log("");
     console.log(
-      `Rolling back ${this.operationName}...`
+      redactText(
+        `Rolling back ${this.operationName}...`
+      )
     );
 
     const files =
@@ -206,7 +212,9 @@ export class FileTransaction {
           );
 
           console.log(
-            `Removed ${file}`
+            redactText(
+              `Removed ${file}`
+            )
           );
 
           continue;
@@ -233,7 +241,9 @@ export class FileTransaction {
         );
 
         console.log(
-          `Restored ${file}`
+          redactText(
+            `Restored ${file}`
+          )
         );
       } catch (error) {
         const message =
@@ -242,7 +252,9 @@ export class FileTransaction {
             : String(error);
 
         console.error(
-          `Rollback warning for ${file}: ${message}`
+          redactText(
+            `Rollback warning for ${file}: ${message}`
+          )
         );
       }
     }
@@ -285,7 +297,9 @@ export class FileTransaction {
               : String(error);
 
           console.error(
-            `Rollback warning for ${directory}: ${message}`
+            redactText(
+              `Rollback warning for ${directory}: ${message}`
+            )
           );
         }
       }

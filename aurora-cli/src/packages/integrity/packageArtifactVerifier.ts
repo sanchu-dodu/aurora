@@ -13,6 +13,10 @@ import {
   ProjectPathBoundary,
 } from "../../security/projectPathBoundary.js";
 
+import {
+  redactText,
+} from "../../security/secretRedactor.js";
+
 import type {
   PackageManifest,
 } from "../manifestSchema.js";
@@ -235,9 +239,11 @@ export class PackageArtifactVerifier {
 
       throw integrityFailure(
         manifest.id,
-        error instanceof Error
-          ? error.message
-          : String(error),
+        redactText(
+          error instanceof Error
+            ? error.message
+            : String(error)
+        ),
         error
       );
     }

@@ -148,3 +148,41 @@ test(
     );
   }
 );
+
+test(
+  "fatal error formatting redacts credentials from every error shape",
+  () => {
+    const secret =
+      "formatting-secret";
+    const formatted =
+      formatFatalError(
+        new AggregateError(
+          [
+            new AuroraError(
+              `Authorization: Bearer ${secret}`,
+              {
+                code:
+                  ErrorCodes
+                    .CREDENTIAL_STORE_FAILED,
+                suggestion:
+                  `password=${secret}`,
+              }
+            ),
+            new Error(
+              `https://user:${secret}@example.com/private`
+            ),
+          ],
+          `token=${secret}`
+        )
+      );
+
+    assert.equal(
+      formatted.includes(secret),
+      false
+    );
+    assert.match(
+      formatted,
+      /\[REDACTED\]/u
+    );
+  }
+);

@@ -9,6 +9,10 @@ import {
   ProjectPathBoundary,
 } from "../../security/projectPathBoundary.js";
 
+import {
+  redactText,
+} from "../../security/secretRedactor.js";
+
 export class InstallerContext {
   public readonly transaction: TransactionManager;
 
@@ -59,7 +63,9 @@ export class InstallerContext {
   }
 
   log(message: string): void {
-    console.log(message);
+    console.log(
+      redactText(message)
+    );
   }
 
   async createFile(
