@@ -3,6 +3,7 @@
 import { registerCommand } from "../core/commandRegistry.js";
 
 import {
+  type ConfigSetOptions,
   configListCommand,
   configGetCommand,
   configSetCommand,
@@ -11,6 +12,7 @@ import {
 
 registerCommand({
   id: "config",
+  activation: "none",
   register(program: Command): void {
 
     program
@@ -51,13 +53,32 @@ registerCommand({
       .command("set")
       .argument("<key>")
       .argument("<value>")
+      .option(
+        "--plan <file>",
+        "Write an inspectable plan instead of applying"
+      )
+      .option(
+        "--dry-run",
+        "Validate the plan without mutation"
+      )
+      .option(
+        "--yes",
+        "Explicitly approve the configuration write"
+      )
+      .option(
+        "--json",
+        "Print the plan or result as JSON"
+      )
       .action(async (
         key: string,
-        value: string
+        value: string,
+        options:
+          ConfigSetOptions
       ) => {
         await configSetCommand(
           key,
-          value
+          value,
+          options
         );
       });
   },

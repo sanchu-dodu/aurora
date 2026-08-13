@@ -52,6 +52,31 @@ aurora feature list
 aurora package list
 ```
 
+## Plan before mutation
+
+Aurora configuration writes use a strict Operation Plan v1 contract. Preview a change without writing anything:
+
+```bash
+aurora config set packageManager pnpm --dry-run --json
+```
+
+Export a project-bound plan for review, then apply that exact plan with explicit approval:
+
+```bash
+aurora plan config set packageManager pnpm --out config-plan.json
+aurora apply config-plan.json --yes --json
+```
+
+Plans expire, reject secret values, and fail if the project or target file changes after planning. Applying or validating a plan returns a versioned Operation Report v1 with stable plan and report identifiers, per-operation outcomes, timestamps, and totals.
+
+See [Operation Plan v1](docs/operation-plan-v1.md) for the schemas, enabled operations, validation rules, and security limits.
+
+Direct configuration mutation also requires explicit approval:
+
+```bash
+aurora config set packageManager pnpm --yes
+```
+
 ## Shell completion
 
 Aurora can generate completion setup without starting the runtime or loading packages and plugins:
