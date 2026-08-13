@@ -1,4 +1,7 @@
 ﻿import fs from "node:fs/promises";
+import type {
+  Stats,
+} from "node:fs";
 import path from "node:path";
 
 import {
@@ -11,7 +14,16 @@ import {
 
 export class FileTransaction {
   private readonly originalFiles =
-    new Map<string, Buffer | null>();
+    new Map<
+      string,
+      {
+        readonly content: Buffer;
+        readonly mode: number;
+      } | null
+    >();
+
+  private readonly originalDirectoryModes =
+    new Map<string, number>();
 
   private readonly createdDirectories =
     new Set<string>();
@@ -62,15 +74,61 @@ export class FileTransaction {
       return;
     }
 
+    let handle:
+      fs.FileHandle | undefined;
+
     try {
-      const content =
-        await fs.readFile(
+      handle = await fs.open(
+        resolvedFile,
+        "r"
+      );
+
+      const information =
+        await handle.stat();
+      const pathInformation =
+        await fs.lstat(
           resolvedFile
         );
 
+      if (
+        !information.isFile() ||
+        pathInformation
+          .isSymbolicLink() ||
+        !pathInformation.isFile() ||
+        !sameFileIdentity(
+          information,
+          pathInformation
+        )
+      ) {
+        throw new Error(
+          `Path is not a regular file: ${resolvedFile}`
+        );
+      }
+
+      const content =
+        await handle.readFile();
+      const completedInformation =
+        await handle.stat();
+
+      if (
+        fileChangedWhileReading(
+          information,
+          completedInformation
+        )
+      ) {
+        throw new Error(
+          `File changed while its rollback state was being recorded: ${resolvedFile}`
+        );
+      }
+
       this.originalFiles.set(
         resolvedFile,
-        content
+        {
+          content,
+          mode:
+            information.mode &
+            0o777,
+        }
       );
     } catch (error) {
       const code =
@@ -78,7 +136,10 @@ export class FileTransaction {
           error as NodeJS.ErrnoException
         ).code;
 
-      if (code === "ENOENT") {
+      if (
+        handle === undefined &&
+        code === "ENOENT"
+      ) {
         this.originalFiles.set(
           resolvedFile,
           null
@@ -88,6 +149,57 @@ export class FileTransaction {
       }
 
       throw error;
+    } finally {
+      await handle?.close();
+    }
+  }
+
+  async recordDirectoryMode(
+    directory: string
+  ): Promise<void> {
+    const resolvedDirectory =
+      this.pathBoundary
+        .validateAbsolutePath(
+          path.resolve(directory),
+          true
+        );
+
+    if (
+      this.originalDirectoryModes
+        .has(resolvedDirectory)
+    ) {
+      return;
+    }
+
+    try {
+      const information =
+        await fs.lstat(
+          resolvedDirectory
+        );
+
+      if (
+        information.isSymbolicLink() ||
+        !information.isDirectory()
+      ) {
+        throw new Error(
+          `Path is not a regular directory: ${resolvedDirectory}`
+        );
+      }
+
+      this.originalDirectoryModes.set(
+        resolvedDirectory,
+        information.mode & 0o777
+      );
+    } catch (error) {
+      const code =
+        (
+          error as
+            NodeJS.ErrnoException
+        ).code;
+
+      if (code !== "ENOENT") {
+        throw error;
+      }
     }
   }
 
@@ -175,6 +287,8 @@ export class FileTransaction {
 
   commit(): void {
     this.originalFiles.clear();
+    this.originalDirectoryModes
+      .clear();
     this.createdDirectories.clear();
   }
 
@@ -237,7 +351,12 @@ export class FileTransaction {
 
         await fs.writeFile(
           revalidatedFile,
-          originalContent
+          originalContent.content
+        );
+
+        await fs.chmod(
+          revalidatedFile,
+          originalContent.mode
         );
 
         console.log(
@@ -254,6 +373,42 @@ export class FileTransaction {
         console.error(
           redactText(
             `Rollback warning for ${file}: ${message}`
+          )
+        );
+      }
+    }
+
+    const directoryModes =
+      Array.from(
+        this.originalDirectoryModes
+          .entries()
+      ).reverse();
+
+    for (
+      const [directory, mode]
+      of directoryModes
+    ) {
+      try {
+        const validatedDirectory =
+          this.pathBoundary
+            .validateAbsolutePath(
+              directory,
+              true
+            );
+
+        await fs.chmod(
+          validatedDirectory,
+          mode
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : String(error);
+
+        console.error(
+          redactText(
+            `Rollback warning for ${directory}: ${message}`
           )
         );
       }
@@ -316,5 +471,26 @@ export class FileTransaction {
         path.resolve(file)
       );
   }
+}
+
+function sameFileIdentity(
+  left: Stats,
+  right: Stats
+): boolean {
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino
+  );
+}
+
+function fileChangedWhileReading(
+  before: Stats,
+  after: Stats
+): boolean {
+  return (
+    before.size !== after.size ||
+    before.mtimeMs !== after.mtimeMs ||
+    before.ctimeMs !== after.ctimeMs
+  );
 }
 

@@ -14,6 +14,7 @@ import "../../dist/commands/generateRegistration.js";
 import "../../dist/commands/packageRegistration.js";
 import "../../dist/commands/recoveryRegistration.js";
 import "../../dist/commands/completionRegistration.js";
+import "../../dist/commands/planApplyRegistration.js";
 
 import {
   getCommandActivation,
@@ -23,6 +24,7 @@ import {
 } from "../../dist/core/commandRegistry.js";
 
 const expectedTopLevelCommands = [
+  "apply",
   "completion",
   "config",
   "doctor",
@@ -31,6 +33,7 @@ const expectedTopLevelCommands = [
   "init",
   "list",
   "package",
+  "plan",
   "plugin",
   "recovery",
   "template",
@@ -77,31 +80,29 @@ test(
 );
 
 test(
-  "Completion is the only command that bypasses runtime activation",
+  "Planning commands bypass runtime activation",
   () => {
-    assert.equal(
-      getCommandActivation(
-        "completion"
-      ),
-      "none"
-    );
+    const passiveCommands =
+      new Set([
+        "apply",
+        "completion",
+        "config",
+        "plan",
+      ]);
 
     for (
       const commandId
       of expectedTopLevelCommands
     ) {
-      if (
-        commandId ===
-        "completion"
-      ) {
-        continue;
-      }
-
       assert.equal(
         getCommandActivation(
           commandId
         ),
-        "runtime"
+        passiveCommands.has(
+          commandId
+        )
+          ? "none"
+          : "runtime"
       );
     }
   }
@@ -176,6 +177,10 @@ test(
       recovery: [
         "list",
         "rollback",
+      ],
+
+      plan: [
+        "config",
       ],
     };
 

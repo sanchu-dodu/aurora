@@ -14,6 +14,7 @@ import "./commands/generateRegistration.js";
 import "./commands/packageRegistration.js";
 import "./commands/recoveryRegistration.js";
 import "./commands/completionRegistration.js";
+import "./commands/planApplyRegistration.js";
 
 import {
   runCli,

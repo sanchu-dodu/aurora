@@ -1,32 +1,34 @@
 import {
   loadConfig,
-  parseConfig,
-  saveConfig,
 } from "../config/configManager.js";
 
 import {
-  AURORA_CONFIG_KEYS,
-  type AuroraConfig,
-  type AuroraConfigKey,
-} from "../config/defaults.js";
+  createConfigSetPlan,
+  requireConfigKey,
+} from "../operations/configPlan.js";
 
 import {
-  AuroraError,
-} from "../errors/AuroraError.js";
+  printApplyResult,
+  printOperationPlan,
+} from "../operations/operationPlanOutput.js";
 
 import {
-  ErrorCodes,
-} from "../errors/errorCodes.js";
+  OperationPlanService,
+} from "../operations/operationPlanService.js";
 
 import {
   redactSensitiveValue,
-  redactText,
 } from "../security/secretRedactor.js";
 
-const CONFIG_KEYS =
-  new Set<string>(
-    AURORA_CONFIG_KEYS
-  );
+export interface ConfigSetOptions {
+  readonly dryRun?: boolean;
+
+  readonly json?: boolean;
+
+  readonly plan?: string;
+
+  readonly yes?: boolean;
+}
 
 export async function configListCommand(): Promise<void> {
   const config = await loadConfig();
@@ -59,79 +61,65 @@ export async function configGetCommand(
 
 export async function configSetCommand(
   key: string,
-  value: string
+  value: string,
+  options: ConfigSetOptions = {}
 ): Promise<void> {
-  const config = await loadConfig();
-  const configKey =
-    requireConfigKey(key);
-
-  const candidate: AuroraConfig = {
-    ...config,
-    [configKey]: parseConfigValue(
-      configKey,
-      value
-    ),
-  };
-
-  const validated = parseConfig(
-    candidate,
-    `configuration value for '${configKey}'`
-  );
-
-  await saveConfig(validated);
-
-  console.log(
-    redactText(
-      `Updated ${configKey} = ${String(validated[configKey])}`
-    )
-  );
-}
-
-function requireConfigKey(
-  key: string
-): AuroraConfigKey {
-  if (!CONFIG_KEYS.has(key)) {
-    throw new AuroraError(
-      `Unknown configuration key '${redactText(key)}'.`,
-      {
-        code:
-          ErrorCodes
-            .UNKNOWN_CONFIGURATION_KEY,
-        suggestion:
-          "Run 'aurora config list' to view supported configuration keys.",
-      }
+  const service =
+    new OperationPlanService();
+  const plan =
+    await createConfigSetPlan(
+      key,
+      value,
+      process.cwd(),
+      service
     );
-  }
 
-  return key as AuroraConfigKey;
-}
+  if (options.plan) {
+    const output =
+      await service.writePlanFile(
+        plan,
+        options.plan
+      );
 
-function parseConfigValue(
-  key: AuroraConfigKey,
-  value: string
-): AuroraConfig[AuroraConfigKey] {
-  if (
-    key === "installDependencies" ||
-    key === "initializeGit"
-  ) {
-    if (
-      value !== "true" &&
-      value !== "false"
-    ) {
-      throw new AuroraError(
-        `Configuration key '${key}' requires 'true' or 'false'.`,
-        {
-          code:
-            ErrorCodes
-              .INVALID_CONFIGURATION,
-          suggestion:
-            "Use an exact lowercase boolean value.",
-        }
+    printOperationPlan(
+      plan,
+      options.json
+    );
+
+    if (!options.json) {
+      console.log("");
+      console.log(
+        `Saved plan: ${output}`
       );
     }
 
-    return value === "true";
+    return;
   }
 
-  return value;
+  if (
+    !options.yes &&
+    !options.dryRun
+  ) {
+    printOperationPlan(
+      plan,
+      options.json
+    );
+  }
+
+  const result =
+    await service.apply(
+      plan,
+      process.cwd(),
+      {
+        approved:
+          options.yes === true,
+        dryRun:
+          options.dryRun === true,
+      }
+    );
+
+  printApplyResult(
+    result,
+    options.json
+  );
 }
