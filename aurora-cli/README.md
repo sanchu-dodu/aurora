@@ -52,6 +52,8 @@ aurora feature list
 aurora package list
 ```
 
+All commands accept `--quiet` (or `-q`) to suppress normal standard output and `--no-color` to remove ANSI color and terminal styling. Quiet mode does not suppress failure diagnostics written to standard error.
+
 ## Plan before mutation
 
 Aurora configuration writes use a strict Operation Plan v1 contract. Preview a change without writing anything:
