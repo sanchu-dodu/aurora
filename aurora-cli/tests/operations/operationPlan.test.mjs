@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   mkdir,
   mkdtemp,
+  open,
   readFile,
   rm,
   stat,
@@ -682,19 +683,27 @@ test(
         )
       );
 
-      assert.equal(
-        await readFile(
-          firstFile,
-          "utf8"
-        ),
-        "original\n"
-      );
-      assert.equal(
-        (
-          await stat(firstFile)
-        ).mode & 0o777,
-        originalFileMode
-      );
+      const restoredFile =
+        await open(firstFile, "r");
+
+      try {
+        const restoredInformation =
+          await restoredFile.stat();
+
+        assert.equal(
+          await restoredFile.readFile({
+            encoding: "utf8",
+          }),
+          "original\n"
+        );
+        assert.equal(
+          restoredInformation.mode &
+            0o777,
+          originalFileMode
+        );
+      } finally {
+        await restoredFile.close();
+      }
       assert.equal(
         (
           await stat(projectRoot)

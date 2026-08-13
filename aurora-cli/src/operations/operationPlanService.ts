@@ -3,6 +3,9 @@ import {
   randomUUID,
 } from "node:crypto";
 
+import type {
+  Stats,
+} from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -185,31 +188,6 @@ export class OperationPlanService {
     const absolutePlanFile =
       path.resolve(planFile);
 
-    let information;
-
-    try {
-      information =
-        await fs.lstat(
-          absolutePlanFile
-        );
-    } catch (error) {
-      throw operationPlanError(
-        `Operation plan file could not be read: ${absolutePlanFile}`,
-        error
-      );
-    }
-
-    if (
-      !information.isFile() ||
-      information.isSymbolicLink() ||
-      information.size >
-        MAX_PLAN_FILE_BYTES
-    ) {
-      throw operationPlanError(
-        "Operation plan must be a regular JSON file no larger than 1 MiB."
-      );
-    }
-
     let handle:
       fs.FileHandle | undefined;
     let raw: string;
@@ -222,18 +200,25 @@ export class OperationPlanService {
 
       const openedInformation =
         await handle.stat();
+      const pathInformation =
+        await fs.lstat(
+          absolutePlanFile
+        );
 
       if (
         !openedInformation.isFile() ||
+        !pathInformation.isFile() ||
+        pathInformation
+          .isSymbolicLink() ||
         openedInformation.size >
           MAX_PLAN_FILE_BYTES ||
-        openedInformation.dev !==
-          information.dev ||
-        openedInformation.ino !==
-          information.ino
+        !sameFileIdentity(
+          openedInformation,
+          pathInformation
+        )
       ) {
         throw operationPlanError(
-          "Operation plan file changed while it was being opened."
+          "Operation plan must remain a regular JSON file no larger than 1 MiB while it is being opened."
         );
       }
 
@@ -245,12 +230,10 @@ export class OperationPlanService {
         await handle.stat();
 
       if (
-        completedInformation.size !==
-          openedInformation.size ||
-        completedInformation.mtimeMs !==
-          openedInformation.mtimeMs ||
-        completedInformation.ctimeMs !==
-          openedInformation.ctimeMs
+        fileChangedWhileReading(
+          openedInformation,
+          completedInformation
+        )
       ) {
         throw operationPlanError(
           "Operation plan file changed while it was being read."
@@ -685,13 +668,29 @@ export function sha256(
 async function readFileState(
   target: string
 ): Promise<ExpectedFileState> {
+  let handle:
+    fs.FileHandle | undefined;
+
   try {
+    handle = await fs.open(
+      target,
+      "r"
+    );
+
     const information =
+      await handle.stat();
+    const pathInformation =
       await fs.lstat(target);
 
     if (
-      information.isSymbolicLink() ||
-      !information.isFile()
+      !information.isFile() ||
+      !pathInformation.isFile() ||
+      pathInformation
+        .isSymbolicLink() ||
+      !sameFileIdentity(
+        information,
+        pathInformation
+      )
     ) {
       throw operationPlanError(
         "Planned file target must be absent or a regular file."
@@ -708,7 +707,20 @@ async function readFileState(
     }
 
     const content =
-      await fs.readFile(target);
+      await handle.readFile();
+    const completedInformation =
+      await handle.stat();
+
+    if (
+      fileChangedWhileReading(
+        information,
+        completedInformation
+      )
+    ) {
+      throw operationPlanError(
+        "Planned file target changed while it was being inspected."
+      );
+    }
 
     return {
       exists: true,
@@ -727,7 +739,10 @@ async function readFileState(
           NodeJS.ErrnoException
       ).code;
 
-    if (code === "ENOENT") {
+      if (
+        handle === undefined &&
+        code === "ENOENT"
+      ) {
       return {
         exists: false,
       };
@@ -737,7 +752,30 @@ async function readFileState(
       "Planned file target could not be inspected safely.",
       error
     );
+  } finally {
+    await handle?.close();
   }
+}
+
+function sameFileIdentity(
+  left: Stats,
+  right: Stats
+): boolean {
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino
+  );
+}
+
+function fileChangedWhileReading(
+  before: Stats,
+  after: Stats
+): boolean {
+  return (
+    before.size !== after.size ||
+    before.mtimeMs !== after.mtimeMs ||
+    before.ctimeMs !== after.ctimeMs
+  );
 }
 
 function fileStatesEqual(

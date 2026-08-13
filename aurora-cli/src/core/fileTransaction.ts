@@ -1,4 +1,7 @@
 ﻿import fs from "node:fs/promises";
+import type {
+  Stats,
+} from "node:fs";
 import path from "node:path";
 
 import {
@@ -71,15 +74,31 @@ export class FileTransaction {
       return;
     }
 
+    let handle:
+      fs.FileHandle | undefined;
+
     try {
+      handle = await fs.open(
+        resolvedFile,
+        "r"
+      );
+
       const information =
+        await handle.stat();
+      const pathInformation =
         await fs.lstat(
           resolvedFile
         );
 
       if (
-        information.isSymbolicLink() ||
-        !information.isFile()
+        !information.isFile() ||
+        pathInformation
+          .isSymbolicLink() ||
+        !pathInformation.isFile() ||
+        !sameFileIdentity(
+          information,
+          pathInformation
+        )
       ) {
         throw new Error(
           `Path is not a regular file: ${resolvedFile}`
@@ -87,9 +106,20 @@ export class FileTransaction {
       }
 
       const content =
-        await fs.readFile(
-          resolvedFile
+        await handle.readFile();
+      const completedInformation =
+        await handle.stat();
+
+      if (
+        fileChangedWhileReading(
+          information,
+          completedInformation
+        )
+      ) {
+        throw new Error(
+          `File changed while its rollback state was being recorded: ${resolvedFile}`
         );
+      }
 
       this.originalFiles.set(
         resolvedFile,
@@ -106,7 +136,10 @@ export class FileTransaction {
           error as NodeJS.ErrnoException
         ).code;
 
-      if (code === "ENOENT") {
+      if (
+        handle === undefined &&
+        code === "ENOENT"
+      ) {
         this.originalFiles.set(
           resolvedFile,
           null
@@ -116,6 +149,8 @@ export class FileTransaction {
       }
 
       throw error;
+    } finally {
+      await handle?.close();
     }
   }
 
@@ -436,5 +471,26 @@ export class FileTransaction {
         path.resolve(file)
       );
   }
+}
+
+function sameFileIdentity(
+  left: Stats,
+  right: Stats
+): boolean {
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino
+  );
+}
+
+function fileChangedWhileReading(
+  before: Stats,
+  after: Stats
+): boolean {
+  return (
+    before.size !== after.size ||
+    before.mtimeMs !== after.mtimeMs ||
+    before.ctimeMs !== after.ctimeMs
+  );
 }
 
