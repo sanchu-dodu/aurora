@@ -19,6 +19,10 @@ import { LockManager } from "../../dist/packages/lock/lockManager.js";
 import { PackageInstaller } from "../../dist/packages/installer/packageInstaller.js";
 import { installPackage } from "../../dist/packages/installCommand.js";
 
+import {
+  writePackageManifestV1,
+} from "./manifestTestUtils.mjs";
+
 const cliRoot = process.cwd();
 
 async function exists(filePath) {
@@ -249,24 +253,6 @@ test(
         await writeFile(
           join(
             brokenPackageDirectory,
-            "manifest.json"
-          ),
-          JSON.stringify(
-            {
-              id: "broken",
-              name: "Broken integration package",
-              version: "1.0.0",
-              dependencies: ["auth"],
-            },
-            null,
-            2
-          ),
-          "utf8"
-        );
-
-        await writeFile(
-          join(
-            brokenPackageDirectory,
             "install.js"
           ),
           `
@@ -299,6 +285,22 @@ export async function afterInstall() {
 }
 `,
           "utf8"
+        );
+
+        await writePackageManifestV1(
+          brokenPackageDirectory,
+          {
+            id: "broken",
+            name:
+              "Broken integration package",
+            dependencies: [
+              {
+                id: "auth",
+                version: "^1.0.0",
+                optional: false,
+              },
+            ],
+          }
         );
 
         const installer = new PackageInstaller({
@@ -457,24 +459,6 @@ test(
         await writeFile(
           join(
             brokenPackageDirectory,
-            "manifest.json"
-          ),
-          JSON.stringify(
-            {
-              id: "existing-state-failure",
-              name: "Existing state failure package",
-              version: "1.0.0",
-              dependencies: ["auth"],
-            },
-            null,
-            2
-          ),
-          "utf8"
-        );
-
-        await writeFile(
-          join(
-            brokenPackageDirectory,
             "install.js"
           ),
           `
@@ -507,6 +491,23 @@ export async function afterInstall() {
 }
 `,
           "utf8"
+        );
+
+        await writePackageManifestV1(
+          brokenPackageDirectory,
+          {
+            id:
+              "existing-state-failure",
+            name:
+              "Existing state failure package",
+            dependencies: [
+              {
+                id: "auth",
+                version: "^1.0.0",
+                optional: false,
+              },
+            ],
+          }
         );
 
         const installer =

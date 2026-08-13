@@ -11,10 +11,6 @@ import {
 } from "../kernel/kernelBuilder.js";
 
 import {
-  discoverPackages,
-} from "../packages/discovery/packageDiscovery.js";
-
-import {
   discoverManifests,
 } from "../packages/discovery/discoverManifests.js";
 
@@ -48,12 +44,21 @@ export interface CliActivation {
   shutdown(): Promise<void>;
 }
 
+export interface CliActivationOptions {
+  packageRoot?: string;
+}
+
 export class AuroraCliActivation
 implements CliActivation {
   private kernel:
     Kernel | undefined;
 
   private activated = false;
+
+  constructor(
+    private readonly options:
+      CliActivationOptions = {}
+  ) {}
 
   async activate(): Promise<void> {
     if (this.activated) {
@@ -69,11 +74,11 @@ implements CliActivation {
     );
 
     await discoverTemplates();
-    await discoverPackages();
-
     registerAllGenerators();
 
-    await discoverManifests();
+    await discoverManifests(
+      this.options.packageRoot
+    );
 
     const container =
       createContainer();

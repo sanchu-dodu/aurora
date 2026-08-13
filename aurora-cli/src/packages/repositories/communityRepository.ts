@@ -1,27 +1,24 @@
+import type {
+  PackageManifest,
+} from "../manifestSchema.js";
+
 export class CommunityRepository {
-
   async hasPackage(
-    packageId: string
+    _packageId: string
   ): Promise<boolean> {
-
     return false;
-
   }
 
   async loadManifest(
-    packageId: string
-  ): Promise<any> {
-
+    _packageId: string
+  ): Promise<PackageManifest> {
     throw new Error(
       "Package not found in community repository."
     );
-
   }
 
-  async getAllPackages(): Promise<any[]> {
-
+  async getAllPackages():
+    Promise<PackageManifest[]> {
     return [];
-
   }
-
 }

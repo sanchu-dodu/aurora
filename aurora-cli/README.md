@@ -80,6 +80,12 @@ Suggestion: Run 'aurora template search <query>' to discover available templates
 
 Failed commands return a non-zero process exit code so scripts and CI systems can detect failures.
 
+## Package manifests
+
+Aurora packages use a strict, versioned trust contract. Before installation, Aurora validates package identity, semantic-version compatibility, publisher and provenance metadata, dependencies and conflicts, requested capabilities, declared files and migrations, platform support, lifecycle state, and SHA-256 artifact integrity.
+
+See [Package Manifest v1](docs/package-manifest-v1.md) for the complete format, capability list, and digest algorithm.
+
 ## Development
 
 Install dependencies:
@@ -107,6 +113,7 @@ The published npm package contains:
 - compiled CLI files under `dist`
 - Aurora packages under `packages`
 - project and generator templates under `templates`
+- package-author documentation under `docs`
 - publication documentation
 
 Development source code and tests are excluded from the published package.

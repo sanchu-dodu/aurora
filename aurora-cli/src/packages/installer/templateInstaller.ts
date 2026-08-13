@@ -1,72 +1,67 @@
-﻿import fs from "node:fs/promises";
+import fs from "node:fs/promises";
 import path from "node:path";
 
-import type { InstallerContext } from "./installerContext.js";
-import { getDefaultPackageRoot } from "../packagePaths.js";
+import {
+  ProjectPathBoundary,
+} from "../../security/projectPathBoundary.js";
+
+import type {
+  PackageManifest,
+} from "../manifestSchema.js";
+
+import {
+  getDefaultPackageRoot,
+} from "../packagePaths.js";
+
+import type {
+  InstallerContext,
+} from "./installerContext.js";
 
 export async function installTemplates(
-  packageId: string,
+  manifest: PackageManifest,
   context: InstallerContext,
   packageRoot = getDefaultPackageRoot()
 ): Promise<void> {
-  const templateDirectory = path.join(
-    packageRoot,
-    packageId,
-    "templates"
-  );
-
-  let entries;
-
-  try {
-    entries = await fs.readdir(
-      templateDirectory,
-      {
-        withFileTypes: true,
-      }
-    );
-  } catch (error) {
-    const code =
-      (error as NodeJS.ErrnoException).code;
-
-    if (code === "ENOENT") {
-      return;
-    }
-
-    throw error;
-  }
-
-  for (const entry of entries) {
-    if (!entry.isFile()) {
-      continue;
-    }
-
-    const source = path.join(
-      templateDirectory,
-      entry.name
+  const packageBoundary =
+    new ProjectPathBoundary(
+      packageRoot
     );
 
-    const targetPath =
-      path.join(
-        "src",
-        entry.name.replace(
-          ".template",
-          ""
-        )
+  const templates =
+    manifest.files.filter(
+      (file) =>
+        file.role === "template"
+    );
+
+  for (const template of templates) {
+    const source =
+      packageBoundary.resolve(
+        `${manifest.id}/${template.path}`
       );
+
+    const relativeTemplatePath =
+      template.path
+        .slice("templates/".length)
+        .replace(/\.template$/, "");
+
+    const targetPath = path.join(
+      "src",
+      ...relativeTemplatePath.split("/")
+    );
 
     const target =
       context.resolveProjectPath(
         targetPath
       );
 
-    const content = await fs.readFile(
-      source,
-      "utf8"
-    );
+    const content =
+      await fs.readFile(
+        source,
+        "utf8"
+      );
 
-    await context.transaction.recordModifiedFile(
-      target
-    );
+    await context.transaction
+      .recordModifiedFile(target);
 
     await fs.mkdir(
       path.dirname(target),
@@ -84,7 +79,7 @@ export async function installTemplates(
     );
 
     console.log(
-      `Installed template ${entry.name}`
+      `Installed template ${template.path}`
     );
   }
 }

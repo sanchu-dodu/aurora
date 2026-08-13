@@ -37,7 +37,7 @@ export class DependencyTree {
           : "├── ";
 
       await this.print(
-        dependencies[i],
+        dependencies[i].id,
         indent + prefix
       );
 

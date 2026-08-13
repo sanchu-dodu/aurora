@@ -1,25 +1,40 @@
-﻿import { RepositoryManager } from "../repositories/repositoryManager.js";
-import { getDefaultPackageRoot } from "../packagePaths.js";
+import type {
+  PackageManifest,
+} from "../manifestSchema.js";
+
+import {
+  getDefaultPackageRoot,
+} from "../packagePaths.js";
+
+import {
+  RepositoryManager,
+} from "../repositories/repositoryManager.js";
 
 export class PackageRegistry {
-  private readonly repository: RepositoryManager;
+  private readonly repository:
+    RepositoryManager;
 
   constructor(
-    packageRoot = getDefaultPackageRoot()
+    packageRoot =
+      getDefaultPackageRoot()
   ) {
     this.repository =
-      new RepositoryManager(packageRoot);
+      new RepositoryManager(
+        packageRoot
+      );
   }
 
   async getPackage(
     packageId: string
-  ): Promise<any> {
+  ): Promise<PackageManifest> {
     return this.repository.getPackage(
       packageId
     );
   }
 
-  async getAllPackages(): Promise<any[]> {
-    return this.repository.getAllPackages();
+  async getAllPackages():
+    Promise<PackageManifest[]> {
+    return this.repository
+      .getAllPackages();
   }
 }

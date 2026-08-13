@@ -1,10 +1,56 @@
 {
+  "manifestVersion": 1,
+  "kind": "package",
   "id": "env",
   "name": "Environment",
   "version": "1.0.0",
-  "description": "Environment variables.",
+  "description": "Provides the Aurora environment package dependency boundary.",
+  "category": "configuration",
+  "tags": [
+    "environment"
+  ],
   "frameworks": [
     "nextjs"
   ],
-  "dependencies": []
+  "compatibility": {
+    "aurora": ">=0.1.0 <1.0.0",
+    "node": ">=22.0.0"
+  },
+  "publisher": {
+    "id": "aurora-technologies",
+    "name": "Aurora Technologies",
+    "url": "https://github.com/sanchu-dodu/aurora"
+  },
+  "artifact": {
+    "algorithm": "sha256",
+    "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "provenance": {
+    "type": "source",
+    "url": "https://github.com/sanchu-dodu/aurora",
+    "reference": "aurora-cli/packages/env@1.0.0"
+  },
+  "dependencies": [],
+  "conflicts": [],
+  "capabilities": [],
+  "files": [],
+  "migrations": [],
+  "environment": [],
+  "platforms": {
+    "os": [
+      "any"
+    ],
+    "architecture": [
+      "any"
+    ]
+  },
+  "lifecycle": {
+    "deprecated": false,
+    "revoked": false
+  },
+  "links": {
+    "homepage": "https://github.com/sanchu-dodu/aurora",
+    "repository": "https://github.com/sanchu-dodu/aurora",
+    "documentation": "https://github.com/sanchu-dodu/aurora/blob/master/aurora-cli/README.md"
+  }
 }

@@ -33,6 +33,16 @@ import {
   generateCompletionScript,
 } from "../../dist/services/completion.js";
 
+import "../../dist/commands/templateRegistration.js";
+
+import {
+  runCli as executeCli,
+} from "../../dist/cli.js";
+
+import {
+  AuroraCliActivation,
+} from "../../dist/runtime/cliActivation.js";
+
 const cliRoot =
   fileURLToPath(
     new URL(
@@ -225,13 +235,18 @@ test(
     const packagesRoot =
       join(
         workspaceRoot,
-        "src",
-        "packages"
+        "activation-packages"
+      );
+
+    const tripwirePackageRoot =
+      join(
+        packagesRoot,
+        "activation-tripwire"
       );
 
     try {
       await mkdir(
-        packagesRoot,
+        tripwirePackageRoot,
         {
           recursive: true,
         }
@@ -239,10 +254,15 @@ test(
 
       await writeFile(
         join(
-          packagesRoot,
-          "activationTripwirePackage.ts"
+          tripwirePackageRoot,
+          "manifest.json"
         ),
-        "throw new Error('PACKAGE_ACTIVATION_TRIPWIRE');\n",
+        `${JSON.stringify({
+          manifestVersion: 1,
+          kind: "package",
+          id: "activation-tripwire",
+          PACKAGE_ACTIVATION_TRIPWIRE: true,
+        })}\n`,
         "utf8"
       );
 
@@ -447,23 +467,20 @@ test(
         missingArgument
       );
 
-      const executableCommand =
-        await runCli(
+      await assert.rejects(
+        executeCli(
           [
+            process.execPath,
+            "aurora",
             "template",
             "search",
             "anything",
           ],
-          workspaceRoot
-        );
-
-      assert.equal(
-        executableCommand.code,
-        1
-      );
-
-      assert.match(
-        executableCommand.stderr,
+          new AuroraCliActivation({
+            packageRoot:
+              packagesRoot,
+          })
+        ),
         /PACKAGE_ACTIVATION_TRIPWIRE/
       );
     } finally {

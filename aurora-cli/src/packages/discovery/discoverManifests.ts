@@ -1,65 +1,51 @@
-﻿import fs from "fs-extra";
-import path from "node:path";
+import {
+  getDefaultPackageRoot,
+} from "../packagePaths.js";
 
-import { loadManifest } from "../manifestLoader.js";
-import { registerPackage } from "../registry/packageRegistry.js";
+import {
+  registerPackage,
+} from "../registry/packageRegistry.js";
 
-export async function discoverManifests(): Promise<void> {
-  const packagesDirectory = path.join(
-    process.cwd(),
-    "src",
-    "packages"
-  );
+import {
+  OfficialRepository,
+} from "../repositories/officialRepository.js";
 
-  if (!(await fs.pathExists(packagesDirectory))) {
-    return;
-  }
+export async function discoverManifests(
+  packageRoot =
+    getDefaultPackageRoot()
+): Promise<void> {
+  const manifests =
+    await new OfficialRepository(
+      packageRoot
+    ).getAllPackages();
 
-  const entries = await fs.readdir(
-    packagesDirectory,
-    {
-      withFileTypes: true,
-    }
-  );
-
-  const discoveredPackageIds: string[] = [];
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-
-    const manifestFile = path.join(
-      packagesDirectory,
-      entry.name,
-      "manifest.json"
-    );
-
-    if (!(await fs.pathExists(manifestFile))) {
-      continue;
-    }
-
-    const manifest =
-      await loadManifest(manifestFile);
-
+  for (const manifest of manifests) {
     registerPackage({
       id: manifest.id,
-      name: manifest.id,
+      name: manifest.name,
       version: manifest.version,
-      description: manifest.description,
-      author: manifest.author,
-      framework: manifest.framework,
+      description:
+        manifest.description,
+      author:
+        manifest.publisher.name,
+      framework:
+        manifest.frameworks[0] ??
+        "agnostic",
       category: manifest.category,
       tags: manifest.tags,
-      dependencies: manifest.dependencies,
-      repository: manifest.repository,
-      documentation: manifest.documentation,
+      dependencies:
+        manifest.dependencies.map(
+          (dependency) =>
+            dependency.id
+        ),
+      repository:
+        manifest.links.repository,
+      documentation:
+        manifest.links.documentation,
     });
-
-    discoveredPackageIds.push(manifest.id);
   }
 
-  if (discoveredPackageIds.length === 0) {
+  if (manifests.length === 0) {
     console.log(
       "No Aurora package manifests discovered."
     );
@@ -68,7 +54,7 @@ export async function discoverManifests(): Promise<void> {
   }
 
   console.log(
-    `Discovered ${discoveredPackageIds.length} package manifest(s): ` +
-    `${discoveredPackageIds.join(", ")}.`
+    `Discovered ${manifests.length} package manifest(s): ` +
+    `${manifests.map((manifest) => manifest.id).join(", ")}.`
   );
 }
