@@ -610,6 +610,7 @@ test(
       projectRoot,
       "blocked"
     );
+    let originalFile;
 
     try {
       await writeFile(
@@ -626,9 +627,11 @@ test(
         "utf8"
       );
 
+      originalFile =
+        await open(firstFile, "r");
       const originalFileMode =
         (
-          await stat(firstFile)
+          await originalFile.stat()
         ).mode & 0o777;
       const originalRootMode =
         (
@@ -683,27 +686,20 @@ test(
         )
       );
 
-      const restoredFile =
-        await open(firstFile, "r");
+      const restoredInformation =
+        await originalFile.stat();
 
-      try {
-        const restoredInformation =
-          await restoredFile.stat();
-
-        assert.equal(
-          await restoredFile.readFile({
-            encoding: "utf8",
-          }),
-          "original\n"
-        );
-        assert.equal(
-          restoredInformation.mode &
-            0o777,
-          originalFileMode
-        );
-      } finally {
-        await restoredFile.close();
-      }
+      assert.equal(
+        await originalFile.readFile({
+          encoding: "utf8",
+        }),
+        "original\n"
+      );
+      assert.equal(
+        restoredInformation.mode &
+          0o777,
+        originalFileMode
+      );
       assert.equal(
         (
           await stat(projectRoot)
@@ -711,6 +707,7 @@ test(
         originalRootMode
       );
     } finally {
+      await originalFile?.close();
       await removeProject(
         projectRoot
       );
