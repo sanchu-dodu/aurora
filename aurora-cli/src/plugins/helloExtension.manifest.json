@@ -1,0 +1,17 @@
+{
+  "manifestVersion": 1,
+  "kind": "extension",
+  "id": "hello",
+  "name": "Hello Extension",
+  "version": "1.0.0",
+  "entry": "helloExtension.js",
+  "trust": "built-in",
+  "capabilities": [
+    "aurora.output.write"
+  ],
+  "limits": {
+    "timeoutMs": 2000,
+    "maxOldGenerationSizeMb": 32,
+    "maxOutputBytes": 8192
+  }
+}

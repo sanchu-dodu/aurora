@@ -1,23 +1,59 @@
-﻿import {
+import {
   registerPlugin,
 } from "../runtime/plugins/pluginRegistry.js";
 
+import {
+  ExtensionWorkerHost,
+} from "../runtime/extensions/extensionWorkerHost.js";
+
+import manifest from "./helloExtension.manifest.json" with { type: "json" };
+
+import {
+  dirname,
+} from "node:path";
+
+import {
+  fileURLToPath,
+} from "node:url";
+
+const host =
+  new ExtensionWorkerHost();
+
+const extensionRoot =
+  dirname(
+    fileURLToPath(
+      import.meta.url
+    )
+  );
+
 registerPlugin({
-  id: "hello",
-
-  name: "Hello Plugin",
-
-  version: "1.0.0",
+  id: manifest.id,
+  name: manifest.name,
+  version: manifest.version,
 
   async activate() {
-    console.log(
-      "✔ Hello Plugin activated."
+    await host.run(
+      manifest,
+      extensionRoot,
+      "activate",
+      {
+        writeOutput(message) {
+          console.log(message);
+        },
+      }
     );
   },
 
   async deactivate() {
-    console.log(
-      "Hello Plugin stopped."
+    await host.run(
+      manifest,
+      extensionRoot,
+      "deactivate",
+      {
+        writeOutput(message) {
+          console.log(message);
+        },
+      }
     );
   },
 });
