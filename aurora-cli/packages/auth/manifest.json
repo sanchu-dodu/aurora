@@ -1,22 +1,102 @@
 {
+  "manifestVersion": 1,
+  "kind": "package",
   "id": "auth",
   "name": "Authentication",
   "version": "1.0.0",
-  "description": "Authentication package.",
-  "author": "Aurora",
-  "homepage": "https://aurora.dev",
+  "description": "Adds NextAuth authentication support to an Aurora project.",
+  "category": "authentication",
+  "tags": [
+    "authentication",
+    "next-auth",
+    "security"
+  ],
   "frameworks": [
     "nextjs"
   ],
+  "compatibility": {
+    "aurora": ">=0.1.0 <1.0.0",
+    "node": ">=22.0.0"
+  },
+  "publisher": {
+    "id": "aurora-technologies",
+    "name": "Aurora Technologies",
+    "url": "https://github.com/sanchu-dodu/aurora"
+  },
+  "artifact": {
+    "algorithm": "sha256",
+    "digest": "142ea0565deeda5685d149d6862d3a698997ba1c35dbad66c4918140f69a96b1"
+  },
+  "provenance": {
+    "type": "source",
+    "url": "https://github.com/sanchu-dodu/aurora",
+    "reference": "aurora-cli/packages/auth@1.0.0"
+  },
   "dependencies": [
-    "database",
-    "env"
+    {
+      "id": "database",
+      "version": "^1.0.0",
+      "optional": false
+    },
+    {
+      "id": "env",
+      "version": "^1.0.0",
+      "optional": false
+    }
   ],
-  "env": [
-    "AUTH_SECRET",
-    "AUTH_URL"
+  "conflicts": [],
+  "capabilities": [
+    "package.code.execute",
+    "project.files.write",
+    "project.config.write",
+    "project.dependencies.write",
+    "project.environment.write"
   ],
-  "aurora": {
-    "minimumVersion": "0.1.0"
+  "files": [
+    {
+      "path": "install.js",
+      "role": "installer",
+      "digest": "6a59cbec283f3e42b37e395b8e5bbbe723f8feefc44bd90fcf6effce6f621a9d"
+    },
+    {
+      "path": "hooks/hooks.js",
+      "role": "hook",
+      "digest": "224467f42ada2a5c576ff38806eab168c91921cc3ef5c994e5cd4c90c6c6e69d"
+    },
+    {
+      "path": "templates/auth.ts.template",
+      "role": "template",
+      "digest": "4ae01def04803f2077b5577a5075bd0698951ee2ee91c3ffaf3799f5a0542b82"
+    }
+  ],
+  "migrations": [],
+  "environment": [
+    {
+      "name": "AUTH_SECRET",
+      "required": true,
+      "secret": true
+    },
+    {
+      "name": "AUTH_URL",
+      "required": true,
+      "secret": false
+    }
+  ],
+  "platforms": {
+    "os": [
+      "any"
+    ],
+    "architecture": [
+      "any"
+    ]
+  },
+  "lifecycle": {
+    "deprecated": false,
+    "revoked": false
+  },
+  "links": {
+    "homepage": "https://github.com/sanchu-dodu/aurora",
+    "repository": "https://github.com/sanchu-dodu/aurora",
+    "documentation": "https://github.com/sanchu-dodu/aurora/blob/master/aurora-cli/README.md"
   }
 }

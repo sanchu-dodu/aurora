@@ -54,7 +54,7 @@ export class PackageWorker {
       performance.now();
 
     const hooks = await loadHooks(
-      packageId,
+      manifest,
       this.packageRoot
     );
 
@@ -63,23 +63,23 @@ export class PackageWorker {
     }
 
     const installer = await loadInstaller(
-      packageId,
+      manifest,
       this.packageRoot
     );
 
     if (installer) {
       await installer(context);
-
-      await installTemplates(
-        packageId,
-        context,
-        this.packageRoot
-      );
     } else {
       console.log(
         "No installer found."
       );
     }
+
+    await installTemplates(
+      manifest,
+      context,
+      this.packageRoot
+    );
 
     if (hooks?.afterInstall) {
       await hooks.afterInstall(context);

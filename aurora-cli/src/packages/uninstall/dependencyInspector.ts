@@ -20,7 +20,11 @@ export class DependencyInspector {
         pkg.dependencies ?? [];
 
       if (
-        deps.includes(packageId)
+        deps.some(
+          (dependency) =>
+            dependency.id ===
+            packageId
+        )
       ) {
 
         dependents.push(pkg.id);

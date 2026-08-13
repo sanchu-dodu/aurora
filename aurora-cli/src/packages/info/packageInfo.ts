@@ -1,18 +1,26 @@
-import { PackageRegistry } from "../registry/registry.js";
-import { CacheManager } from "../cache/cacheManager.js";
+import {
+  CacheManager,
+} from "../cache/cacheManager.js";
+
+import {
+  PackageRegistry,
+} from "../registry/registry.js";
 
 export async function showPackageInfo(
   packageId: string
 ): Promise<void> {
-
   const registry =
     new PackageRegistry();
 
   const manifest =
-    await registry.getPackage(packageId);
+    await registry.getPackage(
+      packageId
+    );
 
   const cache =
-    new CacheManager(process.cwd());
+    new CacheManager(
+      process.cwd()
+    );
 
   const installed =
     await cache.read();
@@ -21,14 +29,26 @@ export async function showPackageInfo(
     installed[packageId];
 
   console.log();
-  console.log("Package Information");
-  console.log("==================");
+  console.log(
+    "Package Information"
+  );
+  console.log(
+    "==================="
+  );
   console.log();
 
-  console.log(`📦 Name: ${manifest.name}`);
-  console.log(`ID: ${manifest.id}`);
-  console.log(`Version: ${manifest.version}`);
-  console.log(`Description: ${manifest.description}`);
+  console.log(
+    `Name: ${manifest.name}`
+  );
+  console.log(
+    `ID: ${manifest.id}`
+  );
+  console.log(
+    `Version: ${manifest.version}`
+  );
+  console.log(
+    `Description: ${manifest.description}`
+  );
   console.log();
 
   console.log(
@@ -36,35 +56,27 @@ export async function showPackageInfo(
   );
 
   if (record?.checksum) {
-
     console.log(
       `Checksum: ${record.checksum}`
     );
-
   }
 
   console.log();
-
   console.log("Dependencies");
   console.log("------------");
 
   if (
-    manifest.dependencies &&
-    manifest.dependencies.length
+    manifest.dependencies.length > 0
   ) {
-
     for (const dependency of manifest.dependencies) {
-
-      console.log(`• ${dependency}`);
-
+      console.log(
+        `${dependency.id} ${dependency.version}` +
+        `${dependency.optional ? " (optional)" : ""}`
+      );
     }
-
   } else {
-
     console.log("None");
-
   }
 
   console.log();
-
 }

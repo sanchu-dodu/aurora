@@ -1,0 +1,3 @@
+aurora-cli/packages/**/*.js text eol=lf
+aurora-cli/packages/**/*.json text eol=lf
+aurora-cli/packages/**/*.template text eol=lf

@@ -93,6 +93,32 @@ export class CacheManager {
     return this.readUnlocked();
   }
 
+  async readExisting(): Promise<
+    Record<string, CachedPackage>
+  > {
+    try {
+      const content =
+        await fs.readFile(
+          this.cacheFile,
+          "utf8"
+        );
+
+      return JSON.parse(content) as
+        Record<string, CachedPackage>;
+    } catch (error) {
+      const code =
+        (
+          error as NodeJS.ErrnoException
+        ).code;
+
+      if (code === "ENOENT") {
+        return {};
+      }
+
+      throw error;
+    }
+  }
+
   async write(
     cache: Record<string, CachedPackage>
   ): Promise<void> {

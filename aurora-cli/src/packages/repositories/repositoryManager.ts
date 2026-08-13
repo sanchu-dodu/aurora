@@ -1,16 +1,52 @@
-﻿import { OfficialRepository } from "./officialRepository.js";
-import { CommunityRepository } from "./communityRepository.js";
-import { LocalRepository } from "./localRepository.js";
-import { getDefaultPackageRoot } from "../packagePaths.js";
+import type {
+  PackageManifest,
+} from "../manifestSchema.js";
+
+import {
+  getDefaultPackageRoot,
+} from "../packagePaths.js";
+
+import {
+  assertCanonicalPackageIdentifier,
+} from "../packageValidator.js";
+
+import {
+  CommunityRepository,
+} from "./communityRepository.js";
+
+import {
+  LocalRepository,
+} from "./localRepository.js";
+
+import {
+  OfficialRepository,
+} from "./officialRepository.js";
+
+interface PackageRepository {
+  hasPackage(
+    packageId: string
+  ): Promise<boolean>;
+
+  loadManifest(
+    packageId: string
+  ): Promise<PackageManifest>;
+
+  getAllPackages():
+    Promise<PackageManifest[]>;
+}
 
 export class RepositoryManager {
-  private readonly repositories;
+  private readonly repositories:
+    PackageRepository[];
 
   constructor(
-    packageRoot = getDefaultPackageRoot()
+    packageRoot =
+      getDefaultPackageRoot()
   ) {
     this.repositories = [
-      new OfficialRepository(packageRoot),
+      new OfficialRepository(
+        packageRoot
+      ),
       new CommunityRepository(),
       new LocalRepository(),
     ];
@@ -18,7 +54,11 @@ export class RepositoryManager {
 
   async getPackage(
     packageId: string
-  ): Promise<any> {
+  ): Promise<PackageManifest> {
+    assertCanonicalPackageIdentifier(
+      packageId
+    );
+
     for (const repository of this.repositories) {
       if (
         await repository.hasPackage(
@@ -36,14 +76,18 @@ export class RepositoryManager {
     );
   }
 
-  async getAllPackages(): Promise<any[]> {
-    const packages: any[] = [];
+  async getAllPackages():
+    Promise<PackageManifest[]> {
+    const packages:
+      PackageManifest[] = [];
 
     for (const repository of this.repositories) {
-      const manifests =
-        await repository.getAllPackages();
-
-      packages.push(...manifests);
+      packages.push(
+        ...(
+          await repository
+            .getAllPackages()
+        )
+      );
     }
 
     return packages;
