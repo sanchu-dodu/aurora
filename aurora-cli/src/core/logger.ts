@@ -1,33 +1,47 @@
-﻿import chalk from "chalk";
+import chalk from "chalk";
+
+import {
+  redactText,
+} from "../security/secretRedactor.js";
 
 export const logger = {
   info(message: string): void {
     console.log(
-      chalk.cyan(message)
+      chalk.cyan(
+        redactText(message)
+      )
     );
   },
 
   success(message: string): void {
     console.log(
-      chalk.green(message)
+      chalk.green(
+        redactText(message)
+      )
     );
   },
 
   warning(message: string): void {
     console.log(
-      chalk.yellow(message)
+      chalk.yellow(
+        redactText(message)
+      )
     );
   },
 
   error(message: string): void {
     console.error(
-      chalk.red(message)
+      chalk.red(
+        redactText(message)
+      )
     );
   },
 
   title(message: string): void {
     console.log(
-      chalk.blue.bold(message)
+      chalk.blue.bold(
+        redactText(message)
+      )
     );
   },
 };

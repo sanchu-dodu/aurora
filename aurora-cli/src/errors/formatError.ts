@@ -2,14 +2,22 @@ import {
   AuroraError,
 } from "./AuroraError.js";
 
+import {
+  redactText,
+} from "../security/secretRedactor.js";
+
 export function getErrorMessage(
   error: unknown
 ): string {
   if (error instanceof Error) {
-    return error.message;
+    return redactText(
+      error.message
+    );
   }
 
-  return String(error);
+  return redactText(
+    String(error)
+  );
 }
 
 export function formatFatalError(
@@ -47,12 +55,12 @@ function formatAuroraError(
     "",
     "Aurora CLI failed:",
     `Code: ${error.code}`,
-    `Message: ${error.message}`,
+    `Message: ${redactText(error.message)}`,
   ];
 
   if (error.suggestion) {
     lines.push(
-      `Suggestion: ${error.suggestion}`
+      `Suggestion: ${redactText(error.suggestion)}`
     );
   }
 
@@ -76,14 +84,14 @@ function formatAggregateError(
       AuroraError
     ) {
       lines.push(
-        `- [${innerError.code}] ${innerError.message}`
+        `- [${innerError.code}] ${redactText(innerError.message)}`
       );
 
       if (
         innerError.suggestion
       ) {
         lines.push(
-          `  Suggestion: ${innerError.suggestion}`
+          `  Suggestion: ${redactText(innerError.suggestion)}`
         );
       }
 
