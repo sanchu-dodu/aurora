@@ -13,6 +13,11 @@ import {
 } from "./core/packageMetadata.js";
 
 import {
+  applyCliOutputPolicy,
+  resolveCliOutputOptions,
+} from "./core/outputPolicy.js";
+
+import {
   AuroraCliActivation,
   type CliActivation,
 } from "./runtime/cliActivation.js";
@@ -81,6 +86,14 @@ export function createCliProgram():
       "Aurora Command Line Interface"
     )
     .version(AURORA_CLI_VERSION)
+    .option(
+      "-q, --quiet",
+      "Suppress normal command output"
+    )
+    .option(
+      "--no-color",
+      "Disable ANSI color and terminal styling"
+    )
     .helpCommand(true)
     .exitOverride();
 
@@ -101,72 +114,81 @@ export async function runCli(
   activation: CliActivation =
     new AuroraCliActivation()
 ): Promise<void> {
-  const program = createCliProgram();
-
-  let activationAttempted = false;
-
-  program.hook(
-    "preAction",
-    async (
-      _thisCommand,
-      actionCommand
-    ) => {
-      if (
-        !requiresActivation(
-          program,
-          actionCommand
-        )
-      ) {
-        return;
-      }
-
-      showBanner();
-
-      activationAttempted = true;
-
-      await activation.activate();
-    }
-  );
-
-  let operationError:
-    unknown;
+  const outputPolicy =
+    applyCliOutputPolicy(
+      resolveCliOutputOptions(argv)
+    );
 
   try {
-    await program.parseAsync([
-      ...argv,
-    ]);
-  } catch (error) {
-    const successfulCommanderExit =
-      error instanceof
-        CommanderError &&
-      error.exitCode === 0;
+    const program = createCliProgram();
 
-    if (
-      !successfulCommanderExit
-    ) {
-      operationError = error;
-    }
-  }
+    let activationAttempted = false;
 
-  if (activationAttempted) {
-    try {
-      await activation.shutdown();
-    } catch (shutdownError) {
-      if (operationError) {
-        throw new AggregateError(
-          [
-            operationError,
-            shutdownError,
-          ],
-          "The CLI operation and Kernel shutdown both failed."
-        );
+    program.hook(
+      "preAction",
+      async (
+        _thisCommand,
+        actionCommand
+      ) => {
+        if (
+          !requiresActivation(
+            program,
+            actionCommand
+          )
+        ) {
+          return;
+        }
+
+        showBanner();
+
+        activationAttempted = true;
+
+        await activation.activate();
       }
+    );
 
-      throw shutdownError;
+    let operationError:
+      unknown;
+
+    try {
+      await program.parseAsync([
+        ...argv,
+      ]);
+    } catch (error) {
+      const successfulCommanderExit =
+        error instanceof
+          CommanderError &&
+        error.exitCode === 0;
+
+      if (
+        !successfulCommanderExit
+      ) {
+        operationError = error;
+      }
     }
-  }
 
-  if (operationError) {
-    throw operationError;
+    if (activationAttempted) {
+      try {
+        await activation.shutdown();
+      } catch (shutdownError) {
+        if (operationError) {
+          throw new AggregateError(
+            [
+              operationError,
+              shutdownError,
+            ],
+            "The CLI operation and Kernel shutdown both failed."
+          );
+        }
+
+        throw shutdownError;
+      }
+    }
+
+    if (operationError) {
+      throw operationError;
+    }
+  } finally {
+    outputPolicy.restore();
   }
 }

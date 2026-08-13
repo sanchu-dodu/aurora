@@ -23,3 +23,4 @@ __pycache__/
 # Aurora CLI local state and generated test workspace
 /aurora-cli/.aurora/
 /aurora-cli/AuroraTest/
+/aurora-cli/.npm-cache/
