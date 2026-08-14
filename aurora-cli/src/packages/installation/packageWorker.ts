@@ -1,20 +1,77 @@
-﻿import path from "node:path";
+import path from "node:path";
 
-import { loadInstaller } from "../installer/installerLoader.js";
-import { loadHooks } from "../installer/hookLoader.js";
-import { installTemplates } from "../installer/templateInstaller.js";
-import type { InstallerContext } from "../installer/installerContext.js";
-import { PackageRegistry } from "../registry/registry.js";
-import { CacheManager } from "../cache/cacheManager.js";
-import { IntegrityChecker } from "../integrity/integrityChecker.js";
-import { LockManager } from "../lock/lockManager.js";
-import { getDefaultPackageRoot } from "../packagePaths.js";
+import {
+  AuroraError,
+} from "../../errors/AuroraError.js";
+
+import {
+  ErrorCodes,
+} from "../../errors/errorCodes.js";
+
+import {
+  CacheManager,
+} from "../cache/cacheManager.js";
+
+import {
+  PackageCapabilityPolicy,
+  type PackageExecutionPolicy,
+} from "../execution/packageCapabilityPolicy.js";
+
+import {
+  PackageExecutionHost,
+} from "../execution/packageExecutionHost.js";
+
+import {
+  PackageArtifactVerifier,
+} from "../integrity/packageArtifactVerifier.js";
+
+import {
+  installTemplates,
+} from "../installer/templateInstaller.js";
+
+import type {
+  InstallerContext,
+} from "../installer/installerContext.js";
+
+import {
+  IntegrityChecker,
+} from "../integrity/integrityChecker.js";
+
+import {
+  LockManager,
+} from "../lock/lockManager.js";
+
+import {
+  getDefaultPackageRoot,
+} from "../packagePaths.js";
+
+import {
+  PackageRegistry,
+} from "../registry/registry.js";
 
 export class PackageWorker {
+  private readonly capabilityPolicy:
+    PackageCapabilityPolicy;
+
+  private readonly executionHost:
+    PackageExecutionHost;
+
   constructor(
     private readonly packageRoot =
-      getDefaultPackageRoot()
-  ) {}
+      getDefaultPackageRoot(),
+    policy:
+      PackageExecutionPolicy = {}
+  ) {
+    this.capabilityPolicy =
+      new PackageCapabilityPolicy(
+        policy
+      );
+
+    this.executionHost =
+      new PackageExecutionHost(
+        this.capabilityPolicy
+      );
+  }
 
   async install(
     packageId: string,
@@ -36,15 +93,39 @@ export class PackageWorker {
       );
 
     if (
-      await cache.isInstalled(packageId)
+      await cache.isInstalled(
+        packageId
+      )
     ) {
       console.log(
         `✓ ${packageId} is already installed`
       );
 
       console.log("");
+
       return;
     }
+
+    /*
+     * PackageWorker is the execution choke point.
+     *
+     * Every path that reaches executable package
+     * code must pass artifact verification and
+     * capability-policy evaluation here, including
+     * callers outside PackageInstaller.
+     */
+    const verifier =
+      new PackageArtifactVerifier();
+
+    await verifier.verify(
+      this.packageRoot,
+      manifest
+    );
+
+    this.capabilityPolicy
+      .assertManifest(
+        manifest
+      );
 
     console.log(
       `Installing ${packageId}...`
@@ -53,36 +134,95 @@ export class PackageWorker {
     const start =
       performance.now();
 
-    const hooks = await loadHooks(
-      manifest,
-      this.packageRoot
-    );
+    const hookDeclaration =
+      manifest.files.find(
+        file =>
+          file.role === "hook"
+      );
 
-    if (hooks?.beforeInstall) {
-      await hooks.beforeInstall(context);
+    const installerDeclaration =
+      manifest.files.find(
+        file =>
+          file.role === "installer"
+      );
+
+    const hasTemplates =
+      manifest.files.some(
+        file =>
+          file.role === "template"
+      );
+
+    if (hookDeclaration) {
+      await this.executionHost.run(
+        manifest,
+        this.packageRoot,
+        hookDeclaration.path,
+        "beforeInstall",
+        context
+      );
     }
 
-    const installer = await loadInstaller(
-      manifest,
-      this.packageRoot
-    );
+    if (installerDeclaration) {
+      const result =
+        await this.executionHost.run(
+          manifest,
+          this.packageRoot,
+          installerDeclaration.path,
+          "install",
+          context
+        );
 
-    if (installer) {
-      await installer(context);
-    } else {
+      /*
+       * Preserve the old installer contract:
+       * a declared installer must export install().
+       */
+      if (!result.executed) {
+        throw new AuroraError(
+          `Declared installer '${installerDeclaration.path}' for package '${manifest.id}' does not export an install function.`,
+          {
+            code:
+              ErrorCodes
+                .INVALID_PACKAGE_MANIFEST,
+            suggestion:
+              "Export an async install(context) function from the declared installer.",
+          }
+        );
+      }
+    }
+    else {
       console.log(
         "No installer found."
       );
     }
 
-    await installTemplates(
-      manifest,
-      context,
-      this.packageRoot
-    );
+    /*
+     * Templates execute in trusted host code rather
+     * than package JavaScript, but they are still a
+     * project mutation and therefore require the
+     * active files.write capability.
+     */
+    if (hasTemplates) {
+      this.capabilityPolicy
+        .assertCapability(
+          manifest,
+          "project.files.write"
+        );
 
-    if (hooks?.afterInstall) {
-      await hooks.afterInstall(context);
+      await installTemplates(
+        manifest,
+        context,
+        this.packageRoot
+      );
+    }
+
+    if (hookDeclaration) {
+      await this.executionHost.run(
+        manifest,
+        this.packageRoot,
+        hookDeclaration.path,
+        "afterInstall",
+        context
+      );
     }
 
     const integrity =
