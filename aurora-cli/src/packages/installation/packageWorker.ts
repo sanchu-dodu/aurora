@@ -49,6 +49,10 @@ import {
   PackageRegistry,
 } from "../registry/registry.js";
 
+import {
+  PackageTrustPolicy,
+} from "../trust/packageTrustPolicy.js";
+
 export class PackageWorker {
   private readonly capabilityPolicy:
     PackageCapabilityPolicy;
@@ -60,7 +64,9 @@ export class PackageWorker {
     private readonly packageRoot =
       getDefaultPackageRoot(),
     policy:
-      PackageExecutionPolicy = {}
+      PackageExecutionPolicy = {},
+    private readonly trustPolicy =
+      new PackageTrustPolicy()
   ) {
     this.capabilityPolicy =
       new PackageCapabilityPolicy(
@@ -92,6 +98,19 @@ export class PackageWorker {
         packageId
       );
 
+    /*
+     * Package trust is evaluated before the installed-cache
+     * shortcut so publisher or signing-key revocation cannot
+     * be bypassed by an existing cache entry.
+     *
+     * PackageInstaller also performs preflight verification,
+     * but PackageWorker independently enforces trust for callers
+     * that invoke this execution boundary directly.
+     */
+    this.trustPolicy.verify(
+      manifest
+    );
+
     if (
       await cache.isInstalled(
         packageId
@@ -110,7 +129,8 @@ export class PackageWorker {
      * PackageWorker is the execution choke point.
      *
      * Every path that reaches executable package
-     * code must pass artifact verification and
+     * code must already have passed publisher trust,
+     * and must pass artifact verification plus
      * capability-policy evaluation here, including
      * callers outside PackageInstaller.
      */

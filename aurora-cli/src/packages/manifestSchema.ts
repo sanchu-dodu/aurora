@@ -3,6 +3,13 @@ import {
 } from "zod";
 
 import {
+  isPackageKeyId,
+  isPackageSignatureValue,
+  PACKAGE_SIGNATURE_VERSION,
+  PACKAGE_SIGNING_ALGORITHM,
+} from "./trust/packageTrustTypes.js";
+
+import {
   isManifestSemVer,
   isManifestVersionRange,
 } from "./version/manifestVersion.js";
@@ -91,6 +98,28 @@ const HttpsUrlSchema =
     },
     "Expected an HTTPS URL."
   );
+
+const PackageSignatureSchema =
+  z.object({
+    version:
+      z.literal(
+        PACKAGE_SIGNATURE_VERSION
+      ),
+    algorithm:
+      z.literal(
+        PACKAGE_SIGNING_ALGORITHM
+      ),
+    keyId:
+      z.string().refine(
+        isPackageKeyId,
+        "Expected a lowercase SHA-256 public-key fingerprint."
+      ),
+    value:
+      z.string().refine(
+        isPackageSignatureValue,
+        "Expected a canonical 64-byte Ed25519 signature encoded as unpadded base64url."
+      ),
+  }).strict();
 
 const PackageDependencySchema =
   z.object({
@@ -210,6 +239,9 @@ export const ManifestSchema =
           .min(1).max(120),
       url: HttpsUrlSchema,
     }).strict(),
+    signature:
+      PackageSignatureSchema
+        .optional(),
     artifact: z.object({
       algorithm: z.literal("sha256"),
       digest: Sha256Schema,
