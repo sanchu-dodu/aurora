@@ -51,6 +51,11 @@ import {
 } from "../registry/registry.js";
 
 import {
+  PackageTrustPolicy,
+  type PackageTrustPolicyOptions,
+} from "../trust/packageTrustPolicy.js";
+
+import {
   TopologicalSorter,
 } from "../graph/topologicalSorter.js";
 
@@ -65,6 +70,9 @@ import {
 export interface PackageInstallerOptions {
   packageRoot?: string;
   projectRoot?: string;
+
+  trust?:
+    PackageTrustPolicyOptions;
 }
 
 function checkConflicts(
@@ -120,6 +128,9 @@ export class PackageInstaller {
   private readonly projectRoot:
     string;
 
+  private readonly trustPolicy:
+    PackageTrustPolicy;
+
   constructor(
     options:
       PackageInstallerOptions = {}
@@ -131,6 +142,11 @@ export class PackageInstaller {
     this.projectRoot =
       options.projectRoot ??
       process.cwd();
+
+    this.trustPolicy =
+      new PackageTrustPolicy(
+        options.trust
+      );
   }
 
   async install(
@@ -139,7 +155,9 @@ export class PackageInstaller {
     const packages =
       await resolveDependencies(
         packageId,
-        this.packageRoot
+        this.packageRoot,
+        new Set<string>(),
+        this.trustPolicy
       );
 
     const registry =
@@ -176,6 +194,15 @@ export class PackageInstaller {
         await registry.getPackage(
           packageName
         );
+
+      /*
+       * Authenticate publisher authority before
+       * trusting any manifest-controlled package
+       * metadata during installation preflight.
+       */
+      this.trustPolicy.verify(
+        manifest
+      );
 
       compatibility.check(
         manifest
@@ -282,7 +309,9 @@ export class PackageInstaller {
 
     const worker =
       new PackageWorker(
-        this.packageRoot
+        this.packageRoot,
+        {},
+        this.trustPolicy
       );
 
     try {

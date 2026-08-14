@@ -19,6 +19,10 @@ import {
 } from "./repositories/officialRepository.js";
 
 import {
+  PackageTrustPolicy,
+} from "./trust/packageTrustPolicy.js";
+
+import {
   satisfiesManifestVersionRange,
 } from "./version/manifestVersion.js";
 
@@ -26,7 +30,9 @@ export async function resolveDependencies(
   packageId: string,
   packageRoot =
     getDefaultPackageRoot(),
-  resolved = new Set<string>()
+  resolved = new Set<string>(),
+  trustPolicy =
+    new PackageTrustPolicy()
 ): Promise<string[]> {
   assertCanonicalPackageIdentifier(
     packageId
@@ -48,9 +54,21 @@ export async function resolveDependencies(
       packageId
     );
 
+  /*
+   * Dependency metadata is authoritative package input.
+   * Authenticate the manifest before reading dependency
+   * declarations or making any resolution decision from them.
+   */
+  trustPolicy.verify(
+    manifest
+  );
+
   const result: string[] = [];
 
-  for (const dependency of manifest.dependencies) {
+  for (
+    const dependency
+    of manifest.dependencies
+  ) {
     if (
       dependency.optional &&
       !(
@@ -66,6 +84,14 @@ export async function resolveDependencies(
       await repository.loadManifest(
         dependency.id
       );
+
+    /*
+     * Authenticate the dependency before trusting its
+     * version or recursively consuming its metadata.
+     */
+    trustPolicy.verify(
+      dependencyManifest
+    );
 
     if (
       !satisfiesManifestVersionRange(
@@ -90,7 +116,8 @@ export async function resolveDependencies(
         await resolveDependencies(
           dependency.id,
           packageRoot,
-          resolved
+          resolved,
+          trustPolicy
         )
       )
     );

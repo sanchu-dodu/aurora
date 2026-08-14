@@ -375,6 +375,7 @@ async function verifyInstalledPackage(
     "dist/plugins/helloPlugin.js",
     "packages/auth/manifest.json",
     "docs/package-manifest-v1.md",
+    "docs/package-trust-v1.md",
     "docs/operation-plan-v1.md",
     "docs/extension-worker-v1.md",
     "dist/plugins/helloExtension.js",

@@ -2,7 +2,7 @@
 
 Every Aurora package is a directory whose name matches the package's canonical `id` and which contains a `manifest.json`. Aurora validates this file before resolving dependencies, loading code, or writing to a project.
 
-Manifest v1 is fail-closed: unknown fields, invalid identifiers, unsupported version syntax, undeclared artifact files, digest mismatches, and incompatible or revoked packages are rejected.
+Manifest v1 is fail-closed: malformed UTF-8, duplicate decoded JSON properties, unknown fields, invalid identifiers, unsupported version syntax, malformed signature envelopes, undeclared artifact files, digest mismatches, incompatible packages, and revoked packages are rejected.
 
 ## Minimal manifest
 
@@ -61,6 +61,53 @@ Manifest v1 is fail-closed: unknown fields, invalid identifiers, unsupported ver
 - Multiple comparators form an AND range and must have one space between them. Manifest v1 does not support `||`, wildcards, or non-canonical whitespace.
 - Prerelease versions satisfy a range only when a comparator explicitly references a prerelease with the same major, minor, and patch version.
 
+
+## Package trust and signatures
+
+Manifest v1 supports an optional package signature:
+
+```json
+{
+  "signature": {
+    "version": 1,
+    "algorithm": "ed25519",
+    "keyId": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "value": "canonical-unpadded-base64url-signature"
+  }
+}
+```
+
+Package Trust v1 uses Ed25519.
+
+`keyId` is the lowercase SHA-256 fingerprint of the canonical Ed25519 SPKI DER public key.
+
+Aurora validates the raw manifest before schema validation. Invalid UTF-8, a UTF-8 BOM, duplicate decoded JSON properties, malformed Unicode, excessive document size, and excessive nesting fail closed.
+
+The signing payload is:
+
+```text
+UTF8("AURORA-PACKAGE-MANIFEST-SIGNATURE-V1")
++
+NUL
++
+UTF8(canonical-json(signing-document))
+```
+
+The signing document contains the complete Manifest v1 security metadata and signature metadata, except for `signature.value`.
+
+Aurora uses its own strict deterministic canonical JSON representation. It is not claimed to be RFC 8785/JCS.
+
+During Stage 1A, unsigned packages can remain compatible when the active policy does not require signatures. If a signature is present, however, Aurora always verifies it and an invalid or untrusted signature fails closed.
+
+Package Trust uses these errors:
+
+- `PACKAGE_SIGNATURE_REQUIRED`
+- `PACKAGE_SIGNATURE_INVALID`
+- `PACKAGE_PUBLISHER_UNTRUSTED`
+- `PACKAGE_SIGNING_KEY_REVOKED`
+
+See `docs/package-trust-v1.md` for the complete Package Trust v1 specification.
+
 ## Artifact integrity
 
 Every regular file below the package directory, except `manifest.json`, must appear exactly once in `files`. Symbolic links and junctions are rejected.
@@ -99,7 +146,7 @@ Packages declare every privileged operation they may require:
 
 Executable installer, hook, or migration files require `package.code.execute`. Templates require `project.files.write`. Environment declarations require `project.environment.write`.
 
-Capability declarations are currently validated package metadata. Enforcement at each runtime boundary will be added as those extension APIs are introduced.
+Capability declarations are enforced at Aurora package execution boundaries. Executable package code runs through a restricted Node worker process, while privileged project mutations are brokered by the host and checked against manifest declarations and host policy. Unsupported, undeclared, or host-denied capabilities fail closed. This restricted Node execution boundary is not an operating-system sandbox.
 
 ## Dependencies, conflicts, and lifecycle
 

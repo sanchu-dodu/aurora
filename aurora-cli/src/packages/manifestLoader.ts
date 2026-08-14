@@ -16,16 +16,20 @@ import {
   validatePackage,
 } from "./packageValidator.js";
 
+import {
+  parsePackageManifestBytes,
+} from "./trust/packageManifestJson.js";
+
 export async function loadManifest(
   file: string
 ): Promise<PackageManifest> {
-  let content: string;
+  let content: Buffer;
 
   try {
-    content = await fs.readFile(
-      file,
-      "utf8"
-    );
+    content =
+      await fs.readFile(
+        file
+      );
   } catch (error) {
     throw new AuroraError(
       `Package manifest could not be read: ${file}`,
@@ -43,16 +47,19 @@ export async function loadManifest(
   let parsed: unknown;
 
   try {
-    parsed = JSON.parse(content);
+    parsed =
+      parsePackageManifestBytes(
+        content
+      );
   } catch (error) {
     throw new AuroraError(
-      `Package manifest contains invalid JSON: ${file}`,
+      `Package manifest contains invalid or ambiguous JSON: ${file}`,
       {
         code:
           ErrorCodes
             .INVALID_PACKAGE_MANIFEST,
         suggestion:
-          "Correct the JSON syntax before loading the package.",
+          "Use canonical unambiguous JSON without duplicate properties, malformed Unicode, excessive depth, or invalid numeric values.",
         cause: error,
       }
     );
