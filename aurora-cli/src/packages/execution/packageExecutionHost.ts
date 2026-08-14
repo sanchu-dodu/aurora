@@ -1,0 +1,1020 @@
+import {
+  spawn,
+} from "node:child_process";
+
+import path from "node:path";
+
+import {
+  fileURLToPath,
+} from "node:url";
+
+import {
+  AuroraError,
+} from "../../errors/AuroraError.js";
+
+import {
+  ErrorCodes,
+} from "../../errors/errorCodes.js";
+
+import {
+  ProjectPathBoundary,
+} from "../../security/projectPathBoundary.js";
+
+import {
+  redactText,
+} from "../../security/secretRedactor.js";
+
+import type {
+  PackageManifest,
+} from "../manifestSchema.js";
+
+import type {
+  InstallerContext,
+} from "../installer/installerContext.js";
+
+import {
+  PackageCapabilityPolicy,
+} from "./packageCapabilityPolicy.js";
+
+import {
+  assertPackageProjectFileWrite,
+} from "./packageProjectWritePolicy.js";
+
+import type {
+  PackageExecutionLifecycle,
+  PackageExecutionRequest,
+  PackageExecutionResponse,
+  PackageExecutionWorkerMessage,
+} from "./packageExecutionProtocol.js";
+
+const PACKAGE_TIMEOUT_MS =
+  30_000;
+
+const PACKAGE_MAX_OUTPUT_BYTES =
+  1024 * 1024;
+
+const PACKAGE_MAX_OLD_SPACE_MB =
+  128;
+
+const activeExecutions =
+  new Set<string>();
+
+export interface PackageExecutionResult {
+  readonly packageId: string;
+  readonly lifecycle:
+    PackageExecutionLifecycle;
+  readonly executed: boolean;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+export class PackageExecutionHost {
+  constructor(
+    private readonly policy =
+      new PackageCapabilityPolicy()
+  ) {}
+
+  async run(
+    manifest: PackageManifest,
+    packageRoot: string,
+    relativeEntry: string,
+    lifecycle:
+      PackageExecutionLifecycle,
+    context: InstallerContext
+  ): Promise<PackageExecutionResult> {
+    this.policy.assertManifest(
+      manifest
+    );
+
+    this.policy.assertCapability(
+      manifest,
+      "package.code.execute"
+    );
+
+    const packageRootBoundary =
+      new ProjectPathBoundary(
+        packageRoot
+      );
+
+    const packageDirectory =
+      packageRootBoundary.resolve(
+        manifest.id
+      );
+
+    const packageBoundary =
+      new ProjectPathBoundary(
+        packageDirectory
+      );
+
+    const entry =
+      packageBoundary.resolve(
+        relativeEntry
+      );
+
+    const executionKey =
+      `${context.getProjectPath()}\0${manifest.id}`;
+
+    if (
+      activeExecutions.has(
+        executionKey
+      )
+    ) {
+      throw packageExecutionError(
+        ErrorCodes
+          .PACKAGE_EXECUTION_FAILED,
+        `Package '${manifest.id}' is already executing for this project.`
+      );
+    }
+
+    activeExecutions.add(
+      executionKey
+    );
+
+    try {
+      return await this.runChild(
+        manifest,
+        packageDirectory,
+        entry,
+        lifecycle,
+        context
+      );
+    }
+    finally {
+      activeExecutions.delete(
+        executionKey
+      );
+    }
+  }
+
+  private runChild(
+    manifest: PackageManifest,
+    packageDirectory: string,
+    entry: string,
+    lifecycle:
+      PackageExecutionLifecycle,
+    context: InstallerContext
+  ): Promise<PackageExecutionResult> {
+    const workerEntry =
+      fileURLToPath(
+        new URL(
+          "./packageExecutionRuntime.js",
+          import.meta.url
+        )
+      );
+
+    const workerRoot =
+      path.dirname(
+        workerEntry
+      );
+
+    return new Promise(
+      (resolve, reject) => {
+        const child = spawn(
+          process.execPath,
+          createPackageWorkerArgs(
+            workerRoot,
+            packageDirectory,
+            workerEntry,
+            entry,
+            lifecycle
+          ),
+          {
+            cwd:
+              packageDirectory,
+            env:
+              createWorkerEnvironment(),
+            shell: false,
+            windowsHide: true,
+            stdio: [
+              "ignore",
+              "pipe",
+              "pipe",
+              "ipc",
+            ],
+          }
+        );
+
+        const stdoutChunks:
+          Buffer[] = [];
+
+        const stderrChunks:
+          Buffer[] = [];
+
+        let outputBytes = 0;
+
+        let executed = false;
+
+        let completionReceived =
+          false;
+
+        let executionFailure:
+          AuroraError |
+          undefined;
+
+        let brokerFailure:
+          AuroraError |
+          undefined;
+
+        let termination:
+          "output" |
+          "timeout" |
+          undefined;
+
+        let settled = false;
+
+        const terminate = (
+          reason:
+            "output" |
+            "timeout"
+        ) => {
+          if (termination) {
+            return;
+          }
+
+          termination = reason;
+
+          child.kill(
+            "SIGKILL"
+          );
+        };
+
+        const countOutput = (
+          byteLength: number
+        ): boolean => {
+          outputBytes +=
+            byteLength;
+
+          if (
+            outputBytes >
+            PACKAGE_MAX_OUTPUT_BYTES
+          ) {
+            terminate(
+              "output"
+            );
+
+            return false;
+          }
+
+          return true;
+        };
+
+        const collect = (
+          chunks: Buffer[],
+          value:
+            Buffer |
+            string
+        ) => {
+          const chunk =
+            Buffer.isBuffer(
+              value
+            )
+              ? value
+              : Buffer.from(
+                  value
+                );
+
+          if (
+            countOutput(
+              chunk.byteLength
+            )
+          ) {
+            chunks.push(
+              chunk
+            );
+          }
+        };
+
+        child.stdout?.on(
+          "data",
+          value => {
+            collect(
+              stdoutChunks,
+              value
+            );
+          }
+        );
+
+        child.stderr?.on(
+          "data",
+          value => {
+            collect(
+              stderrChunks,
+              value
+            );
+          }
+        );
+
+        const timeout =
+          setTimeout(
+            () => {
+              terminate(
+                "timeout"
+              );
+            },
+            PACKAGE_TIMEOUT_MS
+          );
+
+        child.on(
+          "message",
+          (message: unknown) => {
+            if (
+              !isWorkerMessage(
+                message
+              )
+            ) {
+              executionFailure =
+                packageExecutionError(
+                  ErrorCodes
+                    .PACKAGE_EXECUTION_FAILED,
+                  `Package '${manifest.id}' emitted an invalid worker message.`
+                );
+
+              child.kill(
+                "SIGKILL"
+              );
+
+              return;
+            }
+
+            if (
+              !countOutput(
+                serializedByteLength(
+                  message
+                )
+              )
+            ) {
+              return;
+            }
+
+            if (
+              message.type ===
+                "limit"
+            ) {
+              terminate(
+                "output"
+              );
+
+              return;
+            }
+
+            if (
+              message.type ===
+                "log"
+            ) {
+              context.log(
+                message.message
+              );
+
+              return;
+            }
+
+            if (
+              message.type ===
+                "request"
+            ) {
+              void this.handleRequest(
+                message,
+                manifest,
+                context
+              ).then(
+                value => {
+                  sendResponse(
+                    child,
+                    {
+                      type:
+                        "response",
+                      requestId:
+                        message.requestId,
+                      ok: true,
+                      value,
+                    }
+                  );
+                }
+              ).catch(
+                error => {
+                  const normalized =
+                    error instanceof
+                      AuroraError
+                      ? error
+                      : packageExecutionError(
+                          ErrorCodes
+                            .PACKAGE_EXECUTION_FAILED,
+                          `Package '${manifest.id}' capability broker failed.`,
+                          error
+                        );
+
+                  brokerFailure ??=
+                    normalized;
+
+                  /*
+                   * A denied or invalid privileged request is
+                   * terminal for this package execution.
+                   *
+                   * Do not return the denial to untrusted code
+                   * and allow execution to continue. Preserve
+                   * the authoritative host-side AuroraError and
+                   * terminate the child immediately.
+                   */
+                  child.kill(
+                    "SIGKILL"
+                  );
+                }
+              );
+
+              return;
+            }
+
+            if (
+              message.type ===
+                "failed"
+            ) {
+              executionFailure =
+                packageExecutionError(
+                  ErrorCodes
+                    .PACKAGE_EXECUTION_FAILED,
+                  `Package '${manifest.id}' failed during '${lifecycle}': ${redactText(message.error)}`
+                );
+
+              completionReceived =
+                true;
+
+              return;
+            }
+
+            executed =
+              message.executed;
+
+            completionReceived =
+              true;
+          }
+        );
+
+        child.once(
+          "error",
+          error => {
+            if (settled) {
+              return;
+            }
+
+            settled = true;
+
+            clearTimeout(
+              timeout
+            );
+
+            /*
+             * A host-side capability denial is authoritative.
+             *
+             * Terminating a denied child may itself surface a
+             * ChildProcess error. Do not let that secondary
+             * transport error replace PACKAGE_PERMISSION_DENIED
+             * or another broker-side AuroraError.
+             */
+            if (brokerFailure) {
+              reject(
+                brokerFailure
+              );
+
+              return;
+            }
+
+            reject(
+              packageExecutionError(
+                ErrorCodes
+                  .PACKAGE_EXECUTION_FAILED,
+                `Package '${manifest.id}' worker could not be started.`,
+                error
+              )
+            );
+          }
+        );
+
+        child.once(
+          "exit",
+          () => {
+            /*
+             * Hard execution limits are authoritative as soon
+             * as the terminated worker process exits.
+             *
+             * Do not depend exclusively on ChildProcess "close":
+             * close also waits for stdio closure and can leave
+             * a large-output termination pending.
+             */
+            if (
+              settled ||
+              !termination
+            ) {
+              return;
+            }
+
+            settled = true;
+            clearTimeout(timeout);
+
+            reject(
+              new AuroraError(
+                termination ===
+                "output"
+                  ? `Package '${manifest.id}' exceeded the package output limit.`
+                  : `Package '${manifest.id}' execution timed out.`,
+                {
+                  code:
+                    termination ===
+                    "output"
+                      ? ErrorCodes
+                          .PACKAGE_OUTPUT_LIMIT
+                      : ErrorCodes
+                          .PACKAGE_EXECUTION_TIMEOUT,
+                }
+              )
+            );
+          }
+        );
+        child.once(
+          "close",
+          (
+            exitCode,
+            signal
+          ) => {
+            if (settled) {
+              return;
+            }
+
+            settled = true;
+
+            clearTimeout(
+              timeout
+            );
+
+            const stdout =
+              redactText(
+                Buffer.concat(
+                  stdoutChunks
+                ).toString(
+                  "utf8"
+                )
+              );
+
+            const stderr =
+              redactText(
+                Buffer.concat(
+                  stderrChunks
+                ).toString(
+                  "utf8"
+                )
+              );
+
+            if (
+              termination ===
+                "timeout"
+            ) {
+              reject(
+                packageExecutionError(
+                  ErrorCodes
+                    .PACKAGE_EXECUTION_TIMEOUT,
+                  `Package '${manifest.id}' exceeded its ${PACKAGE_TIMEOUT_MS} ms execution timeout.`
+                )
+              );
+
+              return;
+            }
+
+            if (
+              termination ===
+                "output"
+            ) {
+              reject(
+                packageExecutionError(
+                  ErrorCodes
+                    .PACKAGE_OUTPUT_LIMIT,
+                  `Package '${manifest.id}' exceeded its ${PACKAGE_MAX_OUTPUT_BYTES} byte output limit.`
+                )
+              );
+
+              return;
+            }
+
+            if (
+              brokerFailure
+            ) {
+              reject(
+                brokerFailure
+              );
+
+              return;
+            }
+
+            if (
+              executionFailure
+            ) {
+              reject(
+                executionFailure
+              );
+
+              return;
+            }
+
+            if (
+              exitCode !== 0 ||
+              signal !== null ||
+              !completionReceived
+            ) {
+              reject(
+                packageExecutionError(
+                  ErrorCodes
+                    .PACKAGE_EXECUTION_FAILED,
+                  `Package '${manifest.id}' exited without a valid completion result.`,
+                  {
+                    exitCode,
+                    signal,
+                    stderr,
+                  }
+                )
+              );
+
+              return;
+            }
+
+            resolve({
+              packageId:
+                manifest.id,
+              lifecycle,
+              executed,
+              stdout,
+              stderr,
+            });
+          }
+        );
+      }
+    );
+  }
+
+  private async handleRequest(
+    request:
+      PackageExecutionRequest,
+    manifest: PackageManifest,
+    context: InstallerContext
+  ): Promise<unknown> {
+    this.policy.assertCapability(
+      manifest,
+      request.capability
+    );
+
+    if (
+      request.capability ===
+        "project.files.write" &&
+      request.action ===
+        "createFile"
+    ) {
+      if (
+        !isRecord(
+          request.input
+        ) ||
+        typeof request.input
+          .filePath !==
+          "string" ||
+        typeof request.input
+          .content !==
+          "string"
+      ) {
+        throw invalidRequest(
+          manifest.id,
+          request.action
+        );
+      }
+
+      context.resolveProjectPath(
+        request.input
+          .filePath
+      );
+
+      assertPackageProjectFileWrite(
+        manifest.id,
+        request.input
+          .filePath
+      );
+
+      await context.createFile(
+        request.input
+          .filePath,
+        request.input
+          .content
+      );
+
+      return undefined;
+    }
+
+    if (
+      request.capability ===
+        "project.dependencies.write" &&
+      request.action ===
+        "addDependency"
+    ) {
+      if (
+        !isRecord(
+          request.input
+        ) ||
+        typeof request.input
+          .packageName !==
+          "string" ||
+        typeof request.input
+          .version !==
+          "string" ||
+        request.input
+          .packageName.length ===
+          0 ||
+        request.input
+          .packageName.length >
+          214 ||
+        request.input
+          .version.length ===
+          0 ||
+        request.input
+          .version.length >
+          256
+      ) {
+        throw invalidRequest(
+          manifest.id,
+          request.action
+        );
+      }
+
+      await context.config
+        .addDependency(
+          request.input
+            .packageName,
+          request.input
+            .version
+        );
+
+      return undefined;
+    }
+
+    if (
+      request.capability ===
+        "project.environment.write" &&
+      request.action ===
+        "addVariables"
+    ) {
+      if (
+        !Array.isArray(
+          request.input
+        ) ||
+        request.input.some(
+          value =>
+            typeof value !==
+              "string" ||
+            !/^[A-Z][A-Z0-9_]*$/.test(
+              value
+            )
+        )
+      ) {
+        throw invalidRequest(
+          manifest.id,
+          request.action
+        );
+      }
+
+      const declared =
+        new Set(
+          manifest.environment.map(
+            variable =>
+              variable.name
+          )
+        );
+
+      for (
+        const variable
+        of request.input
+      ) {
+        if (
+          !declared.has(
+            variable
+          )
+        ) {
+          throw new AuroraError(
+            `Package '${manifest.id}' attempted to write undeclared environment variable '${variable}'.`,
+            {
+              code:
+                ErrorCodes
+                  .PACKAGE_PERMISSION_DENIED,
+              suggestion:
+                "Declare package environment variables in Manifest v1 before requesting them.",
+            }
+          );
+        }
+      }
+
+      await context.env
+        .addVariables(
+          request.input
+        );
+
+      return undefined;
+    }
+
+    throw invalidRequest(
+      manifest.id,
+      request.action
+    );
+  }
+}
+
+function createPackageWorkerArgs(
+  workerRoot: string,
+  packageDirectory: string,
+  workerEntry: string,
+  packageEntry: string,
+  lifecycle:
+    PackageExecutionLifecycle
+): string[] {
+  return [
+    "--permission",
+    `--allow-fs-read=${workerRoot}`,
+    `--allow-fs-read=${packageDirectory}`,
+    `--max-old-space-size=${PACKAGE_MAX_OLD_SPACE_MB}`,
+    workerEntry,
+    packageEntry,
+    packageDirectory,
+    String(
+      PACKAGE_MAX_OUTPUT_BYTES
+    ),
+    lifecycle,
+  ];
+}
+
+function createWorkerEnvironment():
+  NodeJS.ProcessEnv {
+  const environment:
+    NodeJS.ProcessEnv = {
+      FORCE_COLOR: "0",
+      NO_COLOR: "1",
+    };
+
+  for (const name of [
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+    "WINDIR",
+  ]) {
+    if (
+      process.env[name]
+    ) {
+      environment[name] =
+        process.env[name];
+    }
+  }
+
+  return environment;
+}
+
+function sendResponse(
+  child:
+    ReturnType<
+      typeof spawn
+    >,
+  response:
+    PackageExecutionResponse
+): void {
+  if (
+    !child.connected
+  ) {
+    return;
+  }
+
+  try {
+    child.send(
+      response,
+      error => {
+        if (error) {
+          child.kill(
+            "SIGKILL"
+          );
+        }
+      }
+    );
+  }
+  catch {
+    child.kill(
+      "SIGKILL"
+    );
+  }
+}
+
+function serializedByteLength(
+  value: unknown
+): number {
+  try {
+    return Buffer.byteLength(
+      JSON.stringify(value)
+    );
+  }
+  catch {
+    return Number.MAX_SAFE_INTEGER;
+  }
+}
+
+function isWorkerMessage(
+  value: unknown
+): value is
+  PackageExecutionWorkerMessage {
+  if (
+    typeof value !==
+      "object" ||
+    value === null
+  ) {
+    return false;
+  }
+
+  const candidate =
+    value as
+      Partial<
+        PackageExecutionWorkerMessage
+      >;
+
+  if (
+    candidate.type ===
+      "limit"
+  ) {
+    return candidate.limit ===
+      "output";
+  }
+
+  if (
+    candidate.type ===
+      "log"
+  ) {
+    return typeof candidate.message ===
+      "string";
+  }
+
+  if (
+    candidate.type ===
+      "completed"
+  ) {
+    return typeof candidate.executed ===
+      "boolean";
+  }
+
+  if (
+    candidate.type ===
+      "failed"
+  ) {
+    return typeof candidate.error ===
+      "string";
+  }
+
+  return (
+    candidate.type ===
+      "request" &&
+    typeof candidate.requestId ===
+      "string" &&
+    typeof candidate.capability ===
+      "string" &&
+    typeof candidate.action ===
+      "string"
+  );
+}
+
+function isRecord(
+  value: unknown
+): value is
+  Record<string, unknown> {
+  return (
+    typeof value ===
+      "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  );
+}
+
+function invalidRequest(
+  packageId: string,
+  action: string
+): AuroraError {
+  return packageExecutionError(
+    ErrorCodes
+      .PACKAGE_EXECUTION_FAILED,
+    `Package '${packageId}' sent invalid or unsupported execution request '${action}'.`
+  );
+}
+
+function packageExecutionError(
+  code:
+    typeof ErrorCodes[
+      | "PACKAGE_EXECUTION_FAILED"
+      | "PACKAGE_EXECUTION_TIMEOUT"
+      | "PACKAGE_OUTPUT_LIMIT"
+    ],
+  message: string,
+  cause?: unknown
+): AuroraError {
+  return new AuroraError(
+    message,
+    {
+      code,
+      suggestion:
+        "Inspect the package manifest, verified artifact, and execution policy before retrying.",
+      cause,
+    }
+  );
+}

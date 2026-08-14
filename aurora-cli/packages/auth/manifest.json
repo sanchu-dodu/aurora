@@ -48,7 +48,6 @@
   "capabilities": [
     "package.code.execute",
     "project.files.write",
-    "project.config.write",
     "project.dependencies.write",
     "project.environment.write"
   ],
