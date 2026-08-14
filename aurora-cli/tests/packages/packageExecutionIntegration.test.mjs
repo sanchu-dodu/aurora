@@ -26,8 +26,25 @@ import {
 } from "../../dist/packages/installation/packageWorker.js";
 
 import {
+  PackageTrustPolicy,
+} from "../../dist/packages/trust/packageTrustPolicy.js";
+
+import {
   writePackageManifestV1,
 } from "./manifestTestUtils.mjs";
+
+function createUnsignedCompatibilityWorker(
+  packageRoot
+) {
+  return new PackageWorker(
+    packageRoot,
+    {},
+    new PackageTrustPolicy({
+      requireSignatures:
+        false,
+    })
+  );
+}
 
 async function exists(
   filePath
@@ -154,7 +171,7 @@ export async function install() {
         .__auroraPackageIsolationTripwire;
 
       const worker =
-        new PackageWorker(
+        createUnsignedCompatibilityWorker(
           packageArtifact
             .packageRoot
         );
@@ -244,7 +261,7 @@ export async function install(context) {
       );
 
       const worker =
-        new PackageWorker(
+        createUnsignedCompatibilityWorker(
           packageArtifact
             .packageRoot
         );
@@ -356,7 +373,7 @@ test(
 
     try {
       const worker =
-        new PackageWorker(
+        createUnsignedCompatibilityWorker(
           packageRoot
         );
 
@@ -432,7 +449,7 @@ export const notAnInstaller = true;
 
     try {
       const worker =
-        new PackageWorker(
+        createUnsignedCompatibilityWorker(
           packageArtifact
             .packageRoot
         );

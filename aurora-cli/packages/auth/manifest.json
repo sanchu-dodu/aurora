@@ -23,6 +23,12 @@
     "name": "Aurora Technologies",
     "url": "https://github.com/sanchu-dodu/aurora"
   },
+  "signature": {
+    "version": 1,
+    "algorithm": "ed25519",
+    "keyId": "ef17eff013d58423f6f6968dda03c01f9ea151b2b20a6466318228945d753591",
+    "value": "ED0OoLVIbW7KykdjdNCYm4kEyd3Yv7ll7tgiZJG7ux6f1Z3o6l-1uBKyXh_r26lR4RS1ga1avpgSw4ixtTlPAg"
+  },
   "artifact": {
     "algorithm": "sha256",
     "digest": "142ea0565deeda5685d149d6862d3a698997ba1c35dbad66c4918140f69a96b1"
