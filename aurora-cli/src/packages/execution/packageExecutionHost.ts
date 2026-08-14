@@ -41,6 +41,10 @@ import {
 } from "./packageProjectWritePolicy.js";
 
 import type {
+  PackageSecretReader,
+} from "./packageSecretBroker.js";
+
+import type {
   PackageExecutionLifecycle,
   PackageExecutionRequest,
   PackageExecutionResponse,
@@ -71,7 +75,9 @@ export interface PackageExecutionResult {
 export class PackageExecutionHost {
   constructor(
     private readonly policy =
-      new PackageCapabilityPolicy()
+      new PackageCapabilityPolicy(),
+    private readonly secretReader?:
+      PackageSecretReader
   ) {}
 
   async run(
@@ -199,6 +205,9 @@ export class PackageExecutionHost {
 
         const stderrChunks:
           Buffer[] = [];
+
+        const releasedSecrets =
+          new Set<string>();
 
         let outputBytes = 0;
 
@@ -362,7 +371,10 @@ export class PackageExecutionHost {
                 "log"
             ) {
               context.log(
-                message.message
+                redactText(
+                  message.message,
+                  [...releasedSecrets]
+                )
               );
 
               return;
@@ -375,7 +387,8 @@ export class PackageExecutionHost {
               void this.handleRequest(
                 message,
                 manifest,
-                context
+                context,
+                releasedSecrets
               ).then(
                 value => {
                   sendResponse(
@@ -432,7 +445,7 @@ export class PackageExecutionHost {
                 packageExecutionError(
                   ErrorCodes
                     .PACKAGE_EXECUTION_FAILED,
-                  `Package '${manifest.id}' failed during '${lifecycle}': ${redactText(message.error)}`
+                  `Package '${manifest.id}' failed during '${lifecycle}': ${redactText(message.error, [...releasedSecrets])}`
                 );
 
               completionReceived =
@@ -551,7 +564,8 @@ export class PackageExecutionHost {
                   stdoutChunks
                 ).toString(
                   "utf8"
-                )
+                ),
+                [...releasedSecrets]
               );
 
             const stderr =
@@ -560,7 +574,8 @@ export class PackageExecutionHost {
                   stderrChunks
                 ).toString(
                   "utf8"
-                )
+                ),
+                [...releasedSecrets]
               );
 
             if (
@@ -652,12 +667,122 @@ export class PackageExecutionHost {
     request:
       PackageExecutionRequest,
     manifest: PackageManifest,
-    context: InstallerContext
+    context: InstallerContext,
+    releasedSecrets: Set<string>
   ): Promise<unknown> {
     this.policy.assertCapability(
       manifest,
       request.capability
     );
+
+    if (
+      request.capability ===
+        "host.secrets.read" &&
+      request.action ===
+        "readSecret"
+    ) {
+      if (
+        !isRecord(
+          request.input
+        ) ||
+        Object.keys(
+          request.input
+        ).length !== 1 ||
+        typeof request.input
+          .name !==
+          "string"
+      ) {
+        throw invalidRequest(
+          manifest.id,
+          request.action
+        );
+      }
+
+      const secretName =
+        request.input.name;
+
+      const declared =
+        (manifest.secrets ?? [])
+          .some(
+            secret =>
+              secret.name ===
+              secretName
+          );
+
+      if (!declared) {
+        throw new AuroraError(
+          `Package '${manifest.id}' attempted to read undeclared package secret '${secretName}'.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_PERMISSION_DENIED,
+            suggestion:
+              "Declare the exact package secret in Manifest v1 before requesting it.",
+          }
+        );
+      }
+
+      if (!this.secretReader) {
+        throw new AuroraError(
+          `Package '${manifest.id}' requested package secret '${secretName}', but no host secret broker is configured.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_PERMISSION_DENIED,
+            suggestion:
+              "Configure Aurora's trusted host secret broker before permitting host.secrets.read.",
+          }
+        );
+      }
+
+      const secret =
+        await this.secretReader
+          .readSecret(
+            manifest,
+            secretName
+          );
+
+      if (secret !== null) {
+        if (
+          secret.length === 0 ||
+          secret.includes("\0")
+        ) {
+          throw new AuroraError(
+            `Package '${manifest.id}' secret broker returned an invalid secret value.`,
+            {
+              code:
+                ErrorCodes
+                  .PACKAGE_EXECUTION_FAILED,
+            }
+          );
+        }
+
+        releasedSecrets.add(
+          secret
+        );
+      }
+
+      return secret;
+    }
+
+    if (
+      releasedSecrets.size > 0 &&
+      containsReleasedSecret(
+        request.input,
+        releasedSecrets
+      )
+    ) {
+      throw new AuroraError(
+        `Package '${manifest.id}' attempted to send a released secret through privileged host request '${request.action}'.`,
+        {
+          code:
+            ErrorCodes
+              .PACKAGE_PERMISSION_DENIED,
+          suggestion:
+            "Do not write raw package secret values through privileged host requests.",
+        }
+      );
+    }
 
     if (
       request.capability ===
@@ -975,6 +1100,50 @@ function isWorkerMessage(
   );
 }
 
+function containsReleasedSecret(
+  value: unknown,
+  releasedSecrets:
+    ReadonlySet<string>
+): boolean {
+  if (typeof value === "string") {
+    for (const secret of releasedSecrets) {
+      if (
+        secret.length > 0 &&
+        value.includes(secret)
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  if (Array.isArray(value)) {
+    return value.some(
+      item =>
+        containsReleasedSecret(
+          item,
+          releasedSecrets
+        )
+    );
+  }
+
+  if (
+    typeof value === "object" &&
+    value !== null
+  ) {
+    return Object.values(value)
+      .some(
+        item =>
+          containsReleasedSecret(
+            item,
+            releasedSecrets
+          )
+      );
+  }
+
+  return false;
+}
 function isRecord(
   value: unknown
 ): value is

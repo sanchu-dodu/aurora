@@ -13,7 +13,28 @@ import type {
 export type PackageCapability =
   PackageManifest["capabilities"][number];
 
+/*
+ * BROKERED means that Aurora recognizes the capability as one
+ * that may be implemented through a trusted host-side broker.
+ *
+ * It does NOT imply that the capability is enabled by default.
+ */
 export const BROKERED_PACKAGE_CAPABILITIES = [
+  "host.secrets.read",
+  "package.code.execute",
+  "project.files.write",
+  "project.dependencies.write",
+  "project.environment.write",
+] as const satisfies
+  readonly PackageCapability[];
+
+/*
+ * Secret access is intentionally absent.
+ *
+ * A caller must explicitly grant host.secrets.read before a
+ * package declaring it can pass capability admission.
+ */
+export const DEFAULT_PACKAGE_ALLOWED_CAPABILITIES = [
   "package.code.execute",
   "project.files.write",
   "project.dependencies.write",
@@ -36,12 +57,13 @@ export class PackageCapabilityPolicy {
     ReadonlySet<PackageCapability>;
 
   constructor(
-    policy: PackageExecutionPolicy = {}
+    policy:
+      PackageExecutionPolicy = {}
   ) {
     this.allowedCapabilities =
       new Set<PackageCapability>(
         policy.allowedCapabilities ??
-        BROKERED_PACKAGE_CAPABILITIES
+        DEFAULT_PACKAGE_ALLOWED_CAPABILITIES
       );
   }
 
@@ -86,7 +108,8 @@ export class PackageCapabilityPolicy {
       PackageManifest,
       "id" | "capabilities"
     >,
-    capability: PackageCapability
+    capability:
+      PackageCapability
   ): void {
     if (
       !manifest.capabilities.includes(
@@ -127,7 +150,8 @@ export class PackageCapabilityPolicy {
 
   private deny(
     packageId: string,
-    capability: PackageCapability,
+    capability:
+      PackageCapability,
     reason: string
   ): never {
     throw new AuroraError(

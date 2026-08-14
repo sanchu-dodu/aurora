@@ -6,6 +6,10 @@ import {
   ErrorCodes,
 } from "../../errors/errorCodes.js";
 
+import type {
+  PackageExecutionPolicy,
+} from "../execution/packageCapabilityPolicy.js";
+
 import {
   CacheManager,
 } from "../cache/cacheManager.js";
@@ -73,6 +77,17 @@ export interface PackageInstallerOptions {
 
   trust?:
     PackageTrustPolicyOptions;
+
+  /**
+   * Trusted host policy only.
+   *
+   * Package manifests may declare capabilities but
+   * cannot populate this policy. Callers must opt in
+   * explicitly when additional brokered authority is
+   * intended.
+   */
+  executionPolicy?:
+    PackageExecutionPolicy;
 }
 
 function checkConflicts(
@@ -131,6 +146,9 @@ export class PackageInstaller {
   private readonly trustPolicy:
     PackageTrustPolicy;
 
+  private readonly executionPolicy:
+    PackageExecutionPolicy;
+
   constructor(
     options:
       PackageInstallerOptions = {}
@@ -147,6 +165,10 @@ export class PackageInstaller {
       new PackageTrustPolicy(
         options.trust
       );
+
+    this.executionPolicy =
+      options.executionPolicy ??
+      {};
   }
 
   async install(
@@ -310,7 +332,7 @@ export class PackageInstaller {
     const worker =
       new PackageWorker(
         this.packageRoot,
-        {},
+        this.executionPolicy,
         this.trustPolicy
       );
 

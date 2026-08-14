@@ -202,6 +202,36 @@ const context:
       },
     },
 
+    secrets: {
+      async read(
+        name
+      ) {
+        const value =
+          await request(
+            "host.secrets.read",
+            "readSecret",
+            {
+              name,
+            }
+          );
+
+        if (value === null) {
+          return null;
+        }
+
+        if (
+          typeof value !==
+            "string"
+        ) {
+          throw new Error(
+            "Package secret broker returned an invalid response."
+          );
+        }
+
+        return value;
+      },
+    },
+
     env: {
       async addVariables(
         variables

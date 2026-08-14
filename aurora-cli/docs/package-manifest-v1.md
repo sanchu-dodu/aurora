@@ -148,6 +148,66 @@ Executable installer, hook, or migration files require `package.code.execute`. T
 
 Capability declarations are enforced at Aurora package execution boundaries. Executable package code runs through a restricted Node worker process, while privileged project mutations are brokered by the host and checked against manifest declarations and host policy. Unsupported, undeclared, or host-denied capabilities fail closed. This restricted Node execution boundary is not an operating-system sandbox.
 
+## Package secret declarations
+
+Packages must explicitly name every host-managed secret they may request.
+
+```json
+{
+  "capabilities": [
+    "host.secrets.read"
+  ],
+  "secrets": [
+    {
+      "name": "database-password",
+      "required": true
+    }
+  ]
+}
+```
+
+The `secrets` field is optional. Existing signed manifests that omit it retain their original validated shape; Aurora does not synthesize `secrets: []`.
+
+Each declaration contains:
+
+- `name`: a canonical lowercase package identifier, at most 128 characters.
+- `required`: whether execution requires that package-scoped secret to exist.
+
+Secret names must be unique within the manifest.
+
+A non-empty `secrets` array requires `host.secrets.read`. Declaring `host.secrets.read` without at least one named secret is invalid.
+
+Manifest declaration does not grant access by itself. The active host execution policy must also explicitly permit `host.secrets.read`.
+
+Package secret names identify a package-scoped logical namespace. They are not operating-system credential IDs.
+
+Aurora derives the credential-store identifier from publisher ID, package ID, and secret name using a domain-separated SHA-256 mapping.
+
+A package secret named `aurora-cloud` therefore does not resolve to the Aurora Cloud internal credential. It resolves only inside that publisher and package namespace.
+
+Secret values are never stored in the package manifest, package files, project configuration, or package environment declarations.
+
+Package Trust cryptographically binds the `secrets` field because the signing document covers the manifest except for `signature.value`. Changing a secret name or its `required` flag invalidates the existing signature.
+
+The package worker does not have direct operating-system credential-store access. Secret values may cross the execution boundary only through Aurora host-side capability brokering after manifest and host-policy authorization.
+
+A restricted Node worker is not an operating-system sandbox.
+
+### Trusted host policy admission
+
+Declaring `host.secrets.read` and naming a secret in a signed package manifest does not grant secret access by itself. Manifest declarations describe the authority a package requests; trusted Aurora host policy decides whether that authority is admitted.
+
+`PackageInstaller` exposes `executionPolicy` as a programmatic host API. When it is omitted, Aurora uses the default package execution policy and `host.secrets.read` remains denied. A trusted caller must explicitly include `host.secrets.read` in the active allowed capabilities before a package secret request can reach the host-side broker.
+
+The normal Aurora package-install CLI does not expose an option for granting `host.secrets.read`. Package manifests, project configuration, environment variables, repair flows, and update flows also cannot grant this host authority. This separation prevents package-controlled input from promoting its own privileges.
+
+When trusted host policy admits secret access, `PackageWorker` keeps credential access in host code. The worker receives only `context.secrets.read(name)` and cannot directly instantiate the operating-system credential store or native keyring implementation.
+
+Each released secret value is tracked only for the lifetime of the individual worker execution. Aurora applies exact-value redaction to worker logs, captured stdout, captured stderr, and worker failure messages, and rejects privileged host requests that attempt to write an exact released secret value.
+
+Exact-value redaction is defense in depth, not a confidentiality boundary against code that has deliberately been authorized to receive a raw secret. Authorized package code can transform, encode, split, hash, or otherwise derive data from a secret in ways that exact-value matching cannot reliably detect. For that reason, `host.secrets.read` is a high-trust capability and must remain an explicit host admission decision.
+
+Required secret declarations fail closed when the package-scoped credential is absent. Optional secret declarations return `null`. Every credential-store read remains host-owned and auditable.
 ## Dependencies, conflicts, and lifecycle
 
 Dependencies contain `id`, `version`, and `optional`. Missing optional dependencies are skipped; required dependencies must exist and satisfy the declared range. A package cannot depend on itself, conflict with itself, or list the same package as both a dependency and a conflict.

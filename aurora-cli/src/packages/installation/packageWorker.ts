@@ -9,6 +9,10 @@ import {
 } from "../../errors/errorCodes.js";
 
 import {
+  OsCredentialStore,
+} from "../../security/credentials/credentialStore.js";
+
+import {
   CacheManager,
 } from "../cache/cacheManager.js";
 
@@ -20,6 +24,11 @@ import {
 import {
   PackageExecutionHost,
 } from "../execution/packageExecutionHost.js";
+
+import {
+  PackageSecretBroker,
+  type PackageSecretReader,
+} from "../execution/packageSecretBroker.js";
 
 import {
   PackageArtifactVerifier,
@@ -66,7 +75,12 @@ export class PackageWorker {
     policy:
       PackageExecutionPolicy = {},
     private readonly trustPolicy =
-      new PackageTrustPolicy()
+      new PackageTrustPolicy(),
+    secretReader:
+      PackageSecretReader =
+        new PackageSecretBroker(
+          new OsCredentialStore()
+        )
   ) {
     this.capabilityPolicy =
       new PackageCapabilityPolicy(
@@ -75,7 +89,8 @@ export class PackageWorker {
 
     this.executionHost =
       new PackageExecutionHost(
-        this.capabilityPolicy
+        this.capabilityPolicy,
+        secretReader
       );
   }
 

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   BROKERED_PACKAGE_CAPABILITIES,
+  DEFAULT_PACKAGE_ALLOWED_CAPABILITIES,
   PackageCapabilityPolicy,
 } from "../../dist/packages/execution/packageCapabilityPolicy.js";
 
@@ -16,7 +17,46 @@ function manifest(
 }
 
 test(
-  "default package policy permits only brokered capabilities",
+  "brokered capability inventory includes host secret reads",
+  () => {
+    assert.deepEqual(
+      [...BROKERED_PACKAGE_CAPABILITIES],
+      [
+        "host.secrets.read",
+        "package.code.execute",
+        "project.files.write",
+        "project.dependencies.write",
+        "project.environment.write",
+      ]
+    );
+  }
+);
+
+test(
+  "default package policy excludes host secret reads",
+  () => {
+    assert.deepEqual(
+      [...DEFAULT_PACKAGE_ALLOWED_CAPABILITIES],
+      [
+        "package.code.execute",
+        "project.files.write",
+        "project.dependencies.write",
+        "project.environment.write",
+      ]
+    );
+
+    assert.equal(
+      DEFAULT_PACKAGE_ALLOWED_CAPABILITIES
+        .includes(
+          "host.secrets.read"
+        ),
+      false
+    );
+  }
+);
+
+test(
+  "default package policy permits ordinary brokered capabilities",
   () => {
     const policy =
       new PackageCapabilityPolicy();
@@ -35,15 +75,106 @@ test(
           candidate
         )
     );
+  }
+);
 
-    assert.deepEqual(
-      [...BROKERED_PACKAGE_CAPABILITIES],
-      [
-        "package.code.execute",
-        "project.files.write",
-        "project.dependencies.write",
-        "project.environment.write",
-      ]
+test(
+  "default package policy denies a manifest declaring host secret access",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy();
+
+    assert.throws(
+      () =>
+        policy.assertManifest(
+          manifest([
+            "host.secrets.read",
+          ])
+        ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+
+        assert.match(
+          error.message,
+          /host\.secrets\.read/
+        );
+
+        assert.match(
+          error.message,
+          /denied by the active package execution policy/
+        );
+
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "host secret capability can only be admitted by explicit host policy",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        allowedCapabilities: [
+          "host.secrets.read",
+        ],
+      });
+
+    assert.doesNotThrow(
+      () =>
+        policy.assertManifest(
+          manifest([
+            "host.secrets.read",
+          ])
+        )
+    );
+
+    assert.doesNotThrow(
+      () =>
+        policy.assertCapability(
+          manifest([
+            "host.secrets.read",
+          ]),
+          "host.secrets.read"
+        )
+    );
+  }
+);
+
+test(
+  "explicit secret admission does not implicitly grant other capabilities",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        allowedCapabilities: [
+          "host.secrets.read",
+        ],
+      });
+
+    assert.throws(
+      () =>
+        policy.assertManifest(
+          manifest([
+            "host.secrets.read",
+            "project.files.write",
+          ])
+        ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+
+        assert.match(
+          error.message,
+          /project\.files\.write/
+        );
+
+        return true;
+      }
     );
   }
 );
@@ -61,7 +192,7 @@ test(
             "network.access",
           ])
         ),
-      (error) => {
+      error => {
         assert.equal(
           error.code,
           "PACKAGE_PERMISSION_DENIED"
@@ -70,6 +201,11 @@ test(
         assert.match(
           error.message,
           /network\.access/
+        );
+
+        assert.match(
+          error.message,
+          /not supported/
         );
 
         return true;
@@ -96,7 +232,7 @@ test(
             "project.files.write",
           ])
         ),
-      (error) => {
+      error => {
         assert.equal(
           error.code,
           "PACKAGE_PERMISSION_DENIED"
@@ -127,7 +263,7 @@ test(
           ]),
           "project.environment.write"
         ),
-      (error) => {
+      error => {
         assert.equal(
           error.code,
           "PACKAGE_PERMISSION_DENIED"
@@ -145,7 +281,40 @@ test(
 );
 
 test(
-  "package policy permits an explicitly declared and allowed capability",
+  "host secret use fails if capability was not declared even when host allows it",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        allowedCapabilities: [
+          "host.secrets.read",
+        ],
+      });
+
+    assert.throws(
+      () =>
+        policy.assertCapability(
+          manifest([]),
+          "host.secrets.read"
+        ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+
+        assert.match(
+          error.message,
+          /not declared/
+        );
+
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "package policy permits an explicitly declared and allowed ordinary capability",
   () => {
     const policy =
       new PackageCapabilityPolicy({
