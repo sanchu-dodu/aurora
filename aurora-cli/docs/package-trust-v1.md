@@ -144,31 +144,34 @@ Package Trust v1 uses:
 
 Malformed signature schema remains `INVALID_PACKAGE_MANIFEST`.
 
-## Stage 1A compatibility
+## Production enforcement
 
-During Stage 1A:
-
-```text
-unsigned + requireSignatures=false
-    -> legacy compatibility allowed
-```
-
-But:
+Aurora Package Trust v1 requires package signatures by default.
 
 ```text
-signature present
-    -> signature must verify
+new PackageTrustPolicy()
+    -> requireSignatures=true
 ```
 
-A bad signature can never silently downgrade into unsigned behavior.
-
-With:
+An unsigned package presented through the default production policy fails with:
 
 ```text
-requireSignatures=true
+PACKAGE_SIGNATURE_REQUIRED
 ```
 
-unsigned packages fail with `PACKAGE_SIGNATURE_REQUIRED`.
+A controlled caller may explicitly request legacy compatibility:
+
+```text
+new PackageTrustPolicy({
+  requireSignatures: false
+})
+```
+
+This explicit compatibility mode only permits unsigned manifests.
+
+If a signature is present, Aurora always authenticates it against the active trust store.
+
+Invalid, unknown, or revoked signatures can never silently downgrade into unsigned behavior.
 
 ## Verification order
 
@@ -237,10 +240,40 @@ Private signing keys must not be:
 
 Tests generate temporary Ed25519 key pairs only in memory.
 
-## Stage 1B
+## Official Aurora publisher
 
-Stage 1A establishes the Package Trust cryptographic and enforcement foundation.
+Aurora's official built-in packages are authenticated as:
 
-Stage 1B will separately establish Aurora's official publisher signing process, key custody, key rotation and revocation procedures, sign official built-in packages, and deliberately enable signature-required policy.
+```text
+Publisher: aurora-technologies
+Algorithm: ed25519
+Key ID: ef17eff013d58423f6f6968dda03c01f9ea151b2b20a6466318228945d753591
+Public-key encoding: spki-der-base64url
+Public SPKI: MCowBQYDK2VwAyEAlqu_eouLNik7Bd6UgMZl3_i_iHOl0N9tVh0Ac96GWFw
+```
 
-Stage 1B must not be implemented by committing Aurora's production private signing key to this repository.
+Only public verification material is stored in Aurora production source.
+
+The private signing key remains external to the repository and is supplied only to the maintainer signing workflow.
+
+## Stage 1B implementation status
+
+Stage 1B establishes:
+
+- the official Aurora Ed25519 publisher identity;
+- an offline maintainer signing tool;
+- signed auth, database, and env built-in manifests;
+- official Aurora public-key trust in the default package policy;
+- signature-required production defaults;
+- fail-closed handling for unsigned, invalid, unknown, and revoked signatures;
+- trusted overlap for signing-key rotation;
+- distinct revoked-key handling using PACKAGE_SIGNING_KEY_REVOKED;
+- documented signing-key custody, rotation, revocation, recovery, and compromise procedures.
+
+Operational procedures are defined in:
+
+```text
+docs/package-signing-operations.md
+```
+
+Aurora's restricted package worker remains a Node process isolation boundary and is not an operating-system sandbox.

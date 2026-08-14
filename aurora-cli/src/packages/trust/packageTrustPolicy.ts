@@ -11,6 +11,10 @@ import {
   PackageTrustStore,
 } from "./packageTrustStore.js";
 
+import {
+  AURORA_OFFICIAL_TRUSTED_PUBLISHERS,
+} from "./officialPublisherTrust.js";
+
 import type {
   TrustedPublisher,
 } from "./packageTrustTypes.js";
@@ -36,13 +40,13 @@ export class PackageTrustPolicy {
   ) {
     this.requireSignatures =
       options.requireSignatures ??
-      false;
+      true;
 
     this.verifier =
       new PackageSignatureVerifier(
         new PackageTrustStore(
           options.trustedPublishers ??
-          []
+          AURORA_OFFICIAL_TRUSTED_PUBLISHERS
         )
       );
   }
@@ -53,13 +57,16 @@ export class PackageTrustPolicy {
     PackageSignatureVerification |
     undefined {
     /*
-     * Transitional Stage 1A behavior:
+     * Stage 1B enforcement:
      *
-     * Existing unsigned built-ins remain compatible
-     * until Aurora establishes the official publisher
-     * signing key and signs every built-in package.
+     * Aurora's official publisher verification key is
+     * trusted by default and package signatures are required
+     * by default.
      *
-     * Crucially, a PRESENT signature is never ignored.
+     * Controlled callers may explicitly set
+     * requireSignatures=false for legacy compatibility, but
+     * a PRESENT signature is never ignored and must always
+     * authenticate against the active trust store.
      * Signed packages must always authenticate against
      * the active trust store.
      */

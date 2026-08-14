@@ -385,7 +385,7 @@ test(
 );
 
 test(
-  "transitional trust policy permits unsigned manifests only when signatures are not required",
+  "secure default rejects unsigned manifests while explicit compatibility can permit them",
   async () => {
     const packageArtifact =
       await createPackage(
@@ -403,21 +403,21 @@ export async function install() {
             .manifestPath
         );
 
-      const optional =
-        new PackageTrustPolicy();
+      const compatibility =
+        new PackageTrustPolicy({
+          requireSignatures:
+            false,
+        });
 
       assert.equal(
-        optional.verify(
+        compatibility.verify(
           manifest
         ),
         undefined
       );
 
       const required =
-        new PackageTrustPolicy({
-          requireSignatures:
-            true,
-        });
+        new PackageTrustPolicy();
 
       assert.throws(
         () =>
@@ -444,7 +444,7 @@ export async function install() {
 );
 
 test(
-  "a present package signature is never ignored by transitional policy",
+  "a present package signature is never ignored even when unsigned compatibility is explicit",
   async () => {
     const authority =
       createAuthority();
@@ -471,14 +471,17 @@ export async function install() {
         );
 
       /*
-       * requireSignatures defaults false here.
+       * Unsigned compatibility is deliberately enabled.
        *
        * The package is nevertheless signed, so Aurora
        * must authenticate it rather than silently
        * treating it as an unsigned legacy package.
        */
       const policy =
-        new PackageTrustPolicy();
+        new PackageTrustPolicy({
+          requireSignatures:
+            false,
+        });
 
       assert.throws(
         () =>

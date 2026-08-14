@@ -25,6 +25,19 @@ import {
 
 const cliRoot = process.cwd();
 
+function createUnsignedCompatibilityInstaller(
+  options
+) {
+  return new PackageInstaller({
+    ...options,
+
+    trust: {
+      requireSignatures:
+        false,
+    },
+  });
+}
+
 async function exists(filePath) {
   try {
     await access(filePath);
@@ -176,7 +189,7 @@ test(
   async () => {
     await withTemporaryProject(
       async ({ root }) => {
-        const installer = new PackageInstaller({
+        const installer = createUnsignedCompatibilityInstaller({
           packageRoot: join(root, "packages"),
           projectRoot: root,
         });
@@ -303,7 +316,7 @@ export async function afterInstall() {
           }
         );
 
-        const installer = new PackageInstaller({
+        const installer = createUnsignedCompatibilityInstaller({
           packageRoot: join(root, "packages"),
           projectRoot: root,
         });
@@ -511,7 +524,7 @@ export async function afterInstall() {
         );
 
         const installer =
-          new PackageInstaller({
+          createUnsignedCompatibilityInstaller({
             packageRoot: join(root, "packages"),
             projectRoot: root,
           });

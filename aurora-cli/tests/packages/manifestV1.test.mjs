@@ -53,6 +53,10 @@ import {
 } from "../../dist/packages/repositories/officialRepository.js";
 
 import {
+  PackageTrustPolicy,
+} from "../../dist/packages/trust/packageTrustPolicy.js";
+
+import {
   isManifestVersionRange,
   satisfiesManifestVersionRange,
 } from "../../dist/packages/version/manifestVersion.js";
@@ -61,6 +65,40 @@ import {
   createManifestV1,
   writePackageManifestV1,
 } from "./manifestTestUtils.mjs";
+
+function createUnsignedCompatibilityPolicy() {
+  return new PackageTrustPolicy({
+    requireSignatures:
+      false,
+  });
+}
+
+function createUnsignedCompatibilityInstaller(
+  options
+) {
+  return new PackageInstaller({
+    ...options,
+
+    trust: {
+      requireSignatures:
+        false,
+    },
+  });
+}
+
+async function resolveUnsignedDependencies(
+  packageId,
+  packageRoot,
+  resolved =
+    new Set()
+) {
+  return resolveDependencies(
+    packageId,
+    packageRoot,
+    resolved,
+    createUnsignedCompatibilityPolicy()
+  );
+}
 
 function assertAuroraError(
   expectedCode,
@@ -651,7 +689,7 @@ test(
       );
 
       assert.deepEqual(
-        await resolveDependencies(
+        await resolveUnsignedDependencies(
           "optional-root",
           packageRoot
         ),
@@ -709,7 +747,7 @@ test(
       );
 
       await assert.rejects(
-        resolveDependencies(
+        resolveUnsignedDependencies(
           "required-root",
           packageRoot
         ),
@@ -775,7 +813,7 @@ test(
       );
 
       await assert.rejects(
-        new PackageInstaller({
+        createUnsignedCompatibilityInstaller({
           packageRoot,
           projectRoot,
         }).install("conflict-root"),

@@ -7,6 +7,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -22,6 +23,7 @@ import {
 
 import {
   fileURLToPath,
+  pathToFileURL,
 } from "node:url";
 
 const cliRoot =
@@ -367,6 +369,218 @@ async function verifyGeneratedProject(
   }
 }
 
+async function verifyInstalledPackageTrust(
+  installedRoot
+) {
+  const manifestModule =
+    await import(
+      pathToFileURL(
+        join(
+          installedRoot,
+          "dist",
+          "packages",
+          "manifestLoader.js"
+        )
+      ).href
+    );
+
+  const trustModule =
+    await import(
+      pathToFileURL(
+        join(
+          installedRoot,
+          "dist",
+          "packages",
+          "trust",
+          "packageTrustPolicy.js"
+        )
+      ).href
+    );
+
+  const loadManifest =
+    manifestModule.loadManifest;
+
+  const PackageTrustPolicy =
+    trustModule.PackageTrustPolicy;
+
+  assertCondition(
+    typeof loadManifest === "function",
+    "Installed package does not expose its production manifest loader."
+  );
+
+  assertCondition(
+    typeof PackageTrustPolicy === "function",
+    "Installed package does not expose its production trust policy."
+  );
+
+  const trustPolicy =
+    new PackageTrustPolicy();
+
+  const packageIds = [
+    "auth",
+    "database",
+    "env",
+  ];
+
+  for (
+    const packageId
+    of packageIds
+  ) {
+    const manifest =
+      await loadManifest(
+        join(
+          installedRoot,
+          "packages",
+          packageId,
+          "manifest.json"
+        )
+      );
+
+    assertCondition(
+      manifest.id === packageId,
+      `Installed package manifest identity mismatch for ${packageId}.`
+    );
+
+    assertCondition(
+      manifest.publisher?.id ===
+        "aurora-technologies",
+      `Installed package ${packageId} is not bound to the official Aurora publisher.`
+    );
+
+    assertCondition(
+      manifest.signature?.version === 1 &&
+      manifest.signature?.algorithm ===
+        "ed25519",
+      `Installed package ${packageId} does not contain the required Ed25519 signature envelope.`
+    );
+
+    const verification =
+      trustPolicy.verify(
+        manifest
+      );
+
+    assertCondition(
+      verification?.publisherId ===
+        "aurora-technologies" &&
+      verification?.keyId ===
+        manifest.signature.keyId &&
+      verification?.algorithm ===
+        "ed25519",
+      `Installed package ${packageId} failed production publisher authentication.`
+    );
+
+    const {
+      signature: _signature,
+      ...unsignedManifest
+    } = manifest;
+
+    let rejectionCode;
+
+    try {
+      trustPolicy.verify(
+        unsignedManifest
+      );
+    }
+    catch (error) {
+      rejectionCode =
+        error?.code;
+    }
+
+    assertCondition(
+      rejectionCode ===
+        "PACKAGE_SIGNATURE_REQUIRED",
+      `Installed production trust policy did not fail closed on unsigned ${packageId}.`
+    );
+  }
+
+  console.log(
+    "Verified installed Aurora package signatures and secure trust defaults."
+  );
+}
+
+async function verifyNoPrivateKeyMaterial(
+  installedRoot
+) {
+  const markerParts = [
+    ["BEGIN ", "PRIVATE KEY"],
+    ["BEGIN ", "ENCRYPTED PRIVATE KEY"],
+    ["BEGIN ", "OPENSSH PRIVATE KEY"],
+    ["BEGIN ", "ED25519 PRIVATE KEY"],
+  ];
+
+  const markers =
+    markerParts.map(
+      parts => {
+        const value =
+          parts.join("");
+
+        return {
+          value,
+          bytes:
+            Buffer.from(
+              value,
+              "utf8"
+            ),
+        };
+      }
+    );
+
+  async function visit(
+    directory
+  ) {
+    const entries =
+      await readdir(
+        directory,
+        {
+          withFileTypes:
+            true,
+        }
+      );
+
+    for (const entry of entries) {
+      const targetPath =
+        join(
+          directory,
+          entry.name
+        );
+
+      if (entry.isDirectory()) {
+        await visit(
+          targetPath
+        );
+
+        continue;
+      }
+
+      assertCondition(
+        entry.isFile(),
+        `Installed package contains unsupported filesystem entry: ${targetPath}`
+      );
+
+      const bytes =
+        await readFile(
+          targetPath
+        );
+
+      for (const marker of markers) {
+        assertCondition(
+          !bytes.includes(
+            marker.bytes
+          ),
+          `Installed package contains private signing-key marker ${marker.value}: ${targetPath}`
+        );
+      }
+    }
+  }
+
+  await visit(
+    installedRoot
+  );
+
+  console.log(
+    "Verified installed package contains no private signing-key markers."
+  );
+}
 async function verifyInstalledPackage(
   installedRoot
 ) {
@@ -374,8 +588,11 @@ async function verifyInstalledPackage(
     "dist/index.js",
     "dist/plugins/helloPlugin.js",
     "packages/auth/manifest.json",
+    "packages/database/manifest.json",
+    "packages/env/manifest.json",
     "docs/package-manifest-v1.md",
     "docs/package-trust-v1.md",
+    "docs/package-signing-operations.md",
     "docs/operation-plan-v1.md",
     "docs/extension-worker-v1.md",
     "dist/plugins/helloExtension.js",
@@ -404,6 +621,7 @@ async function verifyInstalledPackage(
   const forbiddenPaths = [
     "src",
     "tests",
+    "scripts",
     "AuroraCore",
     "AuroraGalaxy",
     "AuroraStudio",
@@ -423,6 +641,14 @@ async function verifyInstalledPackage(
       `Installed package unexpectedly contains: ${relativePath}`
     );
   }
+
+  await verifyInstalledPackageTrust(
+    installedRoot
+  );
+
+  await verifyNoPrivateKeyMaterial(
+    installedRoot
+  );
 }
 
 async function main() {
