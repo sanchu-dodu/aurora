@@ -158,6 +158,13 @@ const PackageMigrationSchema =
     to: SemVerSchema,
     file: ManifestPathSchema,
   }).strict();
+const PackageSecretSchema =
+  z.object({
+    name:
+      PackageIdentifierSchema,
+    required:
+      z.boolean(),
+  }).strict();
 
 const PlatformSchema =
   z.object({
@@ -289,6 +296,12 @@ export const ManifestSchema =
           secret: z.boolean(),
         }).strict()
       ),
+    secrets:
+      z.array(
+        PackageSecretSchema
+      )
+        .max(50)
+        .optional(),
     platforms: PlatformSchema,
     lifecycle: LifecycleSchema,
     links: z.object({
@@ -356,6 +369,15 @@ export const ManifestSchema =
             manifest.environment.map(
               (variable) =>
                 variable.name
+            ),
+          ],
+          [
+            "secrets",
+            (
+              manifest.secrets ?? []
+            ).map(
+              (secret) =>
+                secret.name
             ),
           ],
           [
@@ -595,6 +617,36 @@ export const ManifestSchema =
             path: ["capabilities"],
             message:
               "Environment declarations require the project.environment.write capability.",
+          });
+        }
+        const declaredSecrets =
+          manifest.secrets ?? [];
+
+        if (
+          declaredSecrets.length > 0 &&
+          !capabilitySet.has(
+            "host.secrets.read"
+          )
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["capabilities"],
+            message:
+              "Package secret declarations require the host.secrets.read capability.",
+          });
+        }
+
+        if (
+          capabilitySet.has(
+            "host.secrets.read"
+          ) &&
+          declaredSecrets.length === 0
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["secrets"],
+            message:
+              "The host.secrets.read capability requires at least one explicitly declared package secret.",
           });
         }
 

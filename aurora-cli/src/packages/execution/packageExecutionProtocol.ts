@@ -66,6 +66,12 @@ export interface PackageWorkerContext {
     ): Promise<void>;
   };
 
+  readonly secrets: {
+    read(
+      name: string
+    ): Promise<string | null>;
+  };
+
   readonly env: {
     addVariables(
       variables: string[]
