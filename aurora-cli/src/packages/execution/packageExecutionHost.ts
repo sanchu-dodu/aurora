@@ -722,6 +722,12 @@ export class PackageExecutionHost {
         );
       }
 
+      this.policy
+        .assertSecretAccess(
+          manifest,
+          secretName
+        );
+
       if (!this.secretReader) {
         throw new AuroraError(
           `Package '${manifest.id}' requested package secret '${secretName}', but no host secret broker is configured.`,

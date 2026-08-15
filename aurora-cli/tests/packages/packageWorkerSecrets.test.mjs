@@ -176,7 +176,15 @@ test(
           {
             allowedCapabilities: [
               "package.code.execute",
-              "host.secrets.read",
+            ],
+            packageSecretGrants: [
+              {
+                publisherId: "aurora-tests",
+                packageId: id,
+                secrets: [
+                  secretName,
+                ],
+              },
             ],
           },
           unsignedTrust(),
@@ -266,7 +274,7 @@ test(
 
           assert.match(
             error.message,
-            /denied by the active package execution policy/
+            /package-scoped secret grant/
           );
 
           return true;

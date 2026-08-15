@@ -177,7 +177,7 @@ Secret names must be unique within the manifest.
 
 A non-empty `secrets` array requires `host.secrets.read`. Declaring `host.secrets.read` without at least one named secret is invalid.
 
-Manifest declaration does not grant access by itself. The active host execution policy must also explicitly permit `host.secrets.read`.
+Manifest declaration does not grant access by itself. The active host execution policy must also contain a matching `packageSecretGrants` entry for the authenticated publisher, package, and requested secret. Generic `allowedCapabilities` cannot grant `host.secrets.read`.
 
 Package secret names identify a package-scoped logical namespace. They are not operating-system credential IDs.
 
@@ -197,7 +197,11 @@ A restricted Node worker is not an operating-system sandbox.
 
 Declaring `host.secrets.read` and naming a secret in a signed package manifest does not grant secret access by itself. Manifest declarations describe the authority a package requests; trusted Aurora host policy decides whether that authority is admitted.
 
-`PackageInstaller` exposes `executionPolicy` as a programmatic host API. When it is omitted, Aurora uses the default package execution policy and `host.secrets.read` remains denied. A trusted caller must explicitly include `host.secrets.read` in the active allowed capabilities before a package secret request can reach the host-side broker.
+`PackageInstaller` exposes `executionPolicy` as a programmatic host API. When it is omitted, Aurora uses the default package execution policy and `host.secrets.read` remains denied. Secret authority is admitted only through `packageSecretGrants`. Each grant identifies an exact `publisherId`, exact `packageId`, and explicit secret-name list. Generic `allowedCapabilities` cannot authorize `host.secrets.read`, even if a caller includes that capability there.
+
+A package secret request is authorized only when the authenticated manifest publisher ID, manifest package ID, declared secret name, and trusted `packageSecretGrants` entry all match. A grant for one package does not authorize another package from the same publisher, and a grant for one publisher does not authorize a package with the same ID from another publisher. A grant for one declared secret does not authorize another declared secret.
+
+Package secret authority does not propagate through dependency relationships. Granting a root package access to a secret does not grant `host.secrets.read` to any dependency processed by the same installation transaction or shared `PackageWorker`. Each dependency that requires secret access must receive its own matching publisher/package/secret grant.
 
 The normal Aurora package-install CLI does not expose an option for granting `host.secrets.read`. Package manifests, project configuration, environment variables, repair flows, and update flows also cannot grant this host authority. This separation prevents package-controlled input from promoting its own privileges.
 

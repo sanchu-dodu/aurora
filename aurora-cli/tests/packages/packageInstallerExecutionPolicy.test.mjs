@@ -174,7 +174,7 @@ test(
 
           assert.match(
             error.message,
-            /denied by the active package execution policy/
+            /package-scoped secret grant/
           );
 
           assert.doesNotMatch(
@@ -214,7 +214,15 @@ test(
         {
           allowedCapabilities: [
             "package.code.execute",
-            "host.secrets.read",
+          ],
+          packageSecretGrants: [
+            {
+              publisherId: "aurora-tests",
+              packageId: id,
+              secrets: [
+                "database-password",
+              ],
+            },
           ],
         }
       ).install(id);
@@ -233,6 +241,258 @@ test(
 
       assert.equal(
         cache[id].version,
+        "1.0.0"
+      );
+    }
+    finally {
+      await cleanup(fixture);
+    }
+  }
+);
+
+
+async function addSecretDependency(
+  fixture,
+  rootId,
+  dependencyId,
+  dependencySource
+) {
+  const rootDirectory =
+    join(
+      fixture.packageRoot,
+      rootId
+    );
+
+  const dependencyDirectory =
+    join(
+      fixture.packageRoot,
+      dependencyId
+    );
+
+  await mkdir(
+    dependencyDirectory,
+    {
+      recursive: true,
+    }
+  );
+
+  await writeFile(
+    join(
+      dependencyDirectory,
+      "install.js"
+    ),
+    dependencySource,
+    "utf8"
+  );
+
+  await writePackageManifestV1(
+    dependencyDirectory,
+    {
+      id: dependencyId,
+      name: dependencyId,
+      capabilities: [
+        "package.code.execute",
+        "host.secrets.read",
+      ],
+      secrets: [
+        {
+          name: "dependency-secret",
+          required: false,
+        },
+      ],
+    }
+  );
+
+  await writePackageManifestV1(
+    rootDirectory,
+    {
+      id: rootId,
+      name: rootId,
+      dependencies: [
+        {
+          id: dependencyId,
+          version: "^1.0.0",
+          optional: false,
+        },
+      ],
+      capabilities: [
+        "package.code.execute",
+        "host.secrets.read",
+      ],
+      secrets: [
+        {
+          name: "root-secret",
+          required: false,
+        },
+      ],
+    }
+  );
+}
+
+test(
+  "root package secret grant does not authorize a dependency",
+  async () => {
+    const rootId =
+      "installer-secret-root-scope";
+
+    const dependencyId =
+      "installer-secret-dependency-scope";
+
+    const fixture =
+      await createFixture(
+        rootId,
+        [
+          "export async function install() {",
+          "  throw new Error(\"root-package-code-must-not-execute\");",
+          "}",
+          "",
+        ].join("\n")
+      );
+
+    try {
+      await addSecretDependency(
+        fixture,
+        rootId,
+        dependencyId,
+        [
+          "export async function install() {",
+          "  throw new Error(\"dependency-package-code-must-not-execute\");",
+          "}",
+          "",
+        ].join("\n")
+      );
+
+      await assert.rejects(
+        installer(
+          fixture,
+          {
+            allowedCapabilities: [
+              "package.code.execute",
+            ],
+            packageSecretGrants: [
+              {
+                publisherId: "aurora-tests",
+                packageId: rootId,
+                secrets: [
+                  "root-secret",
+                ],
+              },
+            ],
+          }
+        ).install(rootId),
+        error => {
+          assert.equal(
+            error.code,
+            "PACKAGE_PERMISSION_DENIED"
+          );
+
+          assert.match(
+            error.message,
+            new RegExp(
+              dependencyId
+            )
+          );
+
+          assert.match(
+            error.message,
+            /host\\.secrets\\.read|secret grant|package-scoped secret/
+          );
+
+          assert.doesNotMatch(
+            error.message,
+            /root-package-code-must-not-execute/
+          );
+
+          assert.doesNotMatch(
+            error.message,
+            /dependency-package-code-must-not-execute/
+          );
+
+          return true;
+        }
+      );
+    }
+    finally {
+      await cleanup(fixture);
+    }
+  }
+);
+
+test(
+  "independent package secret grants authorize root and dependency separately",
+  async () => {
+    const rootId =
+      "installer-secret-root-independent";
+
+    const dependencyId =
+      "installer-secret-dependency-independent";
+
+    const fixture =
+      await createFixture(
+        rootId,
+        [
+          "export async function install() {",
+          "}",
+          "",
+        ].join("\n")
+      );
+
+    try {
+      await addSecretDependency(
+        fixture,
+        rootId,
+        dependencyId,
+        [
+          "export async function install() {",
+          "}",
+          "",
+        ].join("\n")
+      );
+
+      await installer(
+        fixture,
+        {
+          allowedCapabilities: [
+            "package.code.execute",
+          ],
+          packageSecretGrants: [
+            {
+              publisherId: "aurora-tests",
+              packageId: rootId,
+              secrets: [
+                "root-secret",
+              ],
+            },
+            {
+              publisherId: "aurora-tests",
+              packageId: dependencyId,
+              secrets: [
+                "dependency-secret",
+              ],
+            },
+          ],
+        }
+      ).install(rootId);
+
+      const cache =
+        JSON.parse(
+          await readFile(
+            join(
+              fixture.projectRoot,
+              ".aurora",
+              "cache.json"
+            ),
+            "utf8"
+          )
+        );
+
+      assert.equal(
+        cache[rootId].version,
+        "1.0.0"
+      );
+
+      assert.equal(
+        cache[dependencyId].version,
         "1.0.0"
       );
     }

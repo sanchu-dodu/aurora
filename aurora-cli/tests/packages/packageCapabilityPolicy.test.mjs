@@ -8,11 +8,50 @@ import {
 } from "../../dist/packages/execution/packageCapabilityPolicy.js";
 
 function manifest(
-  capabilities = []
+  capabilities = [],
+  {
+    id = "test-package",
+    publisherId = "aurora-tests",
+    secrets,
+  } = {}
 ) {
   return {
-    id: "test-package",
+    id,
+    publisher: {
+      id: publisherId,
+    },
     capabilities,
+    secrets:
+      secrets ??
+      (
+        capabilities.includes(
+          "host.secrets.read"
+        )
+          ? [
+              {
+                name:
+                  "database-password",
+                required: true,
+              },
+            ]
+          : []
+      ),
+  };
+}
+
+function secretGrant(
+  {
+    publisherId = "aurora-tests",
+    packageId = "test-package",
+    secrets = [
+      "database-password",
+    ],
+  } = {}
+) {
+  return {
+    publisherId,
+    packageId,
+    secrets,
   };
 }
 
@@ -104,7 +143,7 @@ test(
 
         assert.match(
           error.message,
-          /denied by the active package execution policy/
+          /package-scoped secret grant/
         );
 
         return true;
@@ -114,7 +153,7 @@ test(
 );
 
 test(
-  "host secret capability can only be admitted by explicit host policy",
+  "generic allowedCapabilities cannot globally grant host secret reads",
   () => {
     const policy =
       new PackageCapabilityPolicy({
@@ -123,34 +162,221 @@ test(
         ],
       });
 
-    assert.doesNotThrow(
+    assert.throws(
       () =>
         policy.assertManifest(
           manifest([
             "host.secrets.read",
           ])
+        ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+
+        assert.match(
+          error.message,
+          /package-scoped secret grant/
+        );
+
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "matching publisher package and declared secret grant admits host secret capability",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageSecretGrants: [
+          secretGrant(),
+        ],
+      });
+
+    const candidate =
+      manifest([
+        "host.secrets.read",
+      ]);
+
+    assert.doesNotThrow(
+      () =>
+        policy.assertManifest(
+          candidate
         )
     );
 
     assert.doesNotThrow(
       () =>
         policy.assertCapability(
-          manifest([
-            "host.secrets.read",
-          ]),
+          candidate,
           "host.secrets.read"
+        )
+    );
+
+    assert.doesNotThrow(
+      () =>
+        policy.assertSecretAccess(
+          candidate,
+          "database-password"
         )
     );
   }
 );
 
 test(
-  "explicit secret admission does not implicitly grant other capabilities",
+  "secret grant for another package does not authorize the candidate package",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageSecretGrants: [
+          secretGrant({
+            packageId:
+              "dependency-package",
+          }),
+        ],
+      });
+
+    assert.throws(
+      () =>
+        policy.assertManifest(
+          manifest([
+            "host.secrets.read",
+          ])
+        ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+
+        assert.match(
+          error.message,
+          /package-scoped secret grant/
+        );
+
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "secret grant for another publisher does not authorize the candidate package",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageSecretGrants: [
+          secretGrant({
+            publisherId:
+              "other-publisher",
+          }),
+        ],
+      });
+
+    assert.throws(
+      () =>
+        policy.assertManifest(
+          manifest([
+            "host.secrets.read",
+          ])
+        ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+
+        assert.match(
+          error.message,
+          /package-scoped secret grant/
+        );
+
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "exact secret grant does not authorize another declared secret",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageSecretGrants: [
+          secretGrant(),
+        ],
+      });
+
+    const candidate =
+      manifest(
+        [
+          "host.secrets.read",
+        ],
+        {
+          secrets: [
+            {
+              name:
+                "database-password",
+              required: true,
+            },
+            {
+              name:
+                "analytics-token",
+              required: false,
+            },
+          ],
+        }
+      );
+
+    assert.doesNotThrow(
+      () =>
+        policy.assertSecretAccess(
+          candidate,
+          "database-password"
+        )
+    );
+
+    assert.throws(
+      () =>
+        policy.assertSecretAccess(
+          candidate,
+          "analytics-token"
+        ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+
+        assert.match(
+          error.message,
+          /analytics-token/
+        );
+
+        assert.match(
+          error.message,
+          /package-scoped secret policy/
+        );
+
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "scoped secret admission does not implicitly grant other capabilities",
   () => {
     const policy =
       new PackageCapabilityPolicy({
         allowedCapabilities: [
-          "host.secrets.read",
+          "package.code.execute",
+        ],
+        packageSecretGrants: [
+          secretGrant(),
         ],
       });
 
@@ -281,12 +507,12 @@ test(
 );
 
 test(
-  "host secret use fails if capability was not declared even when host allows it",
+  "host secret use fails if capability was not declared even when scoped grant exists",
   () => {
     const policy =
       new PackageCapabilityPolicy({
-        allowedCapabilities: [
-          "host.secrets.read",
+        packageSecretGrants: [
+          secretGrant(),
         ],
       });
 
@@ -295,6 +521,49 @@ test(
         policy.assertCapability(
           manifest([]),
           "host.secrets.read"
+        ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+
+        assert.match(
+          error.message,
+          /not declared/
+        );
+
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "exact secret use fails if the secret is not declared by the manifest",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageSecretGrants: [
+          secretGrant({
+            secrets: [
+              "database-password",
+              "undeclared-secret",
+            ],
+          }),
+        ],
+      });
+
+    const candidate =
+      manifest([
+        "host.secrets.read",
+      ]);
+
+    assert.throws(
+      () =>
+        policy.assertSecretAccess(
+          candidate,
+          "undeclared-secret"
         ),
       error => {
         assert.equal(

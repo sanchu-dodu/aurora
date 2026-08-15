@@ -116,13 +116,21 @@ function secretManifest(
 }
 
 function secretPolicy(
+  id,
+  secretNames,
   extraCapabilities = []
 ) {
   return new PackageCapabilityPolicy({
     allowedCapabilities: [
       "package.code.execute",
-      "host.secrets.read",
       ...extraCapabilities,
+    ],
+    packageSecretGrants: [
+      {
+        publisherId: "aurora-tests",
+        packageId: id,
+        secrets: secretNames,
+      },
     ],
   });
 }
@@ -178,7 +186,7 @@ test(
 
       const host =
         new PackageExecutionHost(
-          secretPolicy(),
+          secretPolicy(id, ["database-password"]),
           tracked.reader
         );
 
@@ -292,7 +300,7 @@ test(
 
       const host =
         new PackageExecutionHost(
-          secretPolicy(),
+          secretPolicy(id, ["failure-token"]),
           tracked.reader
         );
 
@@ -369,7 +377,7 @@ test(
     try {
       const host =
         new PackageExecutionHost(
-          secretPolicy()
+          secretPolicy(id, ["database-password"])
         );
 
       await assert.rejects(
@@ -439,7 +447,7 @@ test(
 
       const host =
         new PackageExecutionHost(
-          secretPolicy(),
+          secretPolicy(id, ["allowed-secret"]),
           tracked.reader
         );
 
@@ -543,7 +551,7 @@ test(
 
           assert.match(
             error.message,
-            /denied by the active package execution policy/
+            /package-scoped secret grant/
           );
 
           return true;
@@ -592,9 +600,13 @@ test(
 
       const host =
         new PackageExecutionHost(
-          secretPolicy([
-            "project.files.write",
-          ]),
+          secretPolicy(
+            id,
+            ["database-password"],
+            [
+              "project.files.write",
+            ]
+          ),
           tracked.reader
         );
 
@@ -679,7 +691,7 @@ test(
 
       const host =
         new PackageExecutionHost(
-          secretPolicy(),
+          secretPolicy(id, ["optional-token"]),
           tracked.reader
         );
 
@@ -708,6 +720,95 @@ test(
       assert.equal(
         tracked.calls.length,
         1
+      );
+    }
+    finally {
+      await rm(projectRoot, {
+        recursive: true,
+        force: true,
+      });
+
+      await rm(packageRoot, {
+        recursive: true,
+        force: true,
+      });
+    }
+  }
+);
+
+
+test(
+  "host exact secret policy denies another declared secret before reader access",
+  async () => {
+    const id = "exact-secret-policy-denial";
+
+    const projectRoot =
+      await createProject();
+
+    const packageRoot =
+      await createPackageRoot(
+        id,
+        [
+          "export async function install(context) {",
+          "  await context.secrets.read(\"second-secret\");",
+          "}",
+          "",
+        ].join("\n")
+      );
+
+    try {
+      const tracked =
+        createReader();
+
+      const host =
+        new PackageExecutionHost(
+          secretPolicy(
+            id,
+            ["first-secret"]
+          ),
+          tracked.reader
+        );
+
+      await assert.rejects(
+        host.run(
+          secretManifest(
+            id,
+            [
+              {
+                name: "first-secret",
+                required: true,
+              },
+              {
+                name: "second-secret",
+                required: true,
+              },
+            ]
+          ),
+          packageRoot,
+          "install.js",
+          "install",
+          new InstallerContext(
+            projectRoot
+          )
+        ),
+        error => {
+          assert.equal(
+            error.code,
+            "PACKAGE_PERMISSION_DENIED"
+          );
+
+          assert.match(
+            error.message,
+            /package-scoped secret policy/
+          );
+
+          return true;
+        }
+      );
+
+      assert.equal(
+        tracked.calls.length,
+        0
       );
     }
     finally {
