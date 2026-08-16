@@ -26,6 +26,11 @@ import {
 } from "../execution/packageExecutionHost.js";
 
 import {
+  PackageEnvironmentBroker,
+  type PackageEnvironmentValueProvider,
+} from "../execution/packageEnvironmentBroker.js";
+
+import {
   PackageSecretBroker,
   type PackageSecretReader,
 } from "../execution/packageSecretBroker.js";
@@ -80,17 +85,28 @@ export class PackageWorker {
       PackageSecretReader =
         new PackageSecretBroker(
           new OsCredentialStore()
-        )
+        ),
+    environmentProvider?:
+      PackageEnvironmentValueProvider
   ) {
     this.capabilityPolicy =
       new PackageCapabilityPolicy(
         policy
       );
 
+    const environmentReader =
+      environmentProvider ===
+        undefined
+        ? undefined
+        : new PackageEnvironmentBroker(
+            environmentProvider
+          );
+
     this.executionHost =
       new PackageExecutionHost(
         this.capabilityPolicy,
-        secretReader
+        secretReader,
+        environmentReader
       );
   }
 

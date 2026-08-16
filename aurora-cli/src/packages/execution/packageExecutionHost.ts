@@ -37,6 +37,11 @@ import {
 } from "./packageCapabilityPolicy.js";
 
 import {
+  PACKAGE_ENVIRONMENT_VALUE_MAX_BYTES,
+  type PackageEnvironmentReader,
+} from "./packageEnvironmentBroker.js";
+
+import {
   assertPackageProjectFileWrite,
 } from "./packageProjectWritePolicy.js";
 
@@ -60,6 +65,9 @@ const PACKAGE_MAX_OUTPUT_BYTES =
 const PACKAGE_MAX_OLD_SPACE_MB =
   128;
 
+export const PACKAGE_ENVIRONMENT_LIFECYCLE_MAX_BYTES =
+  256 * 1024;
+
 const activeExecutions =
   new Set<string>();
 
@@ -77,7 +85,9 @@ export class PackageExecutionHost {
     private readonly policy =
       new PackageCapabilityPolicy(),
     private readonly secretReader?:
-      PackageSecretReader
+      PackageSecretReader,
+    private readonly environmentReader?:
+      PackageEnvironmentReader
   ) {}
 
   async run(
@@ -208,6 +218,10 @@ export class PackageExecutionHost {
 
         const releasedSecrets =
           new Set<string>();
+
+        const environmentBudget = {
+          releasedBytes: 0,
+        };
 
         let outputBytes = 0;
 
@@ -388,7 +402,8 @@ export class PackageExecutionHost {
                 message,
                 manifest,
                 context,
-                releasedSecrets
+                releasedSecrets,
+                environmentBudget
               ).then(
                 value => {
                   sendResponse(
@@ -668,12 +683,159 @@ export class PackageExecutionHost {
       PackageExecutionRequest,
     manifest: PackageManifest,
     context: InstallerContext,
-    releasedSecrets: Set<string>
+    releasedSecrets: Set<string>,
+    environmentBudget: {
+      releasedBytes: number;
+    }
   ): Promise<unknown> {
     this.policy.assertCapability(
       manifest,
       request.capability
     );
+
+    if (
+      request.capability ===
+        "host.environment.read" &&
+      request.action ===
+        "readEnvironment"
+    ) {
+      if (
+        !isRecord(
+          request.input
+        ) ||
+        Object.keys(
+          request.input
+        ).length !== 1 ||
+        typeof request.input
+          .name !==
+          "string"
+      ) {
+        throw invalidRequest(
+          manifest.id,
+          request.action
+        );
+      }
+
+      const variableName =
+        request.input.name;
+
+      this.policy
+        .assertEnvironmentAccess(
+          manifest,
+          variableName
+        );
+
+      if (!this.environmentReader) {
+        throw new AuroraError(
+          `Package '${manifest.id}' requested host environment variable '${variableName}', but no trusted host environment reader is configured.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_PERMISSION_DENIED,
+            suggestion:
+              "Configure an explicit trusted non-secret host environment reader before permitting host.environment.read.",
+          }
+        );
+      }
+
+      const value =
+        await this.environmentReader
+          .readEnvironmentVariable(
+            manifest,
+            variableName
+          );
+
+      const declaration =
+        (manifest.hostEnvironment ?? [])
+          .find(
+            candidate =>
+              candidate.name ===
+              variableName
+          );
+
+      if (!declaration) {
+        throw new AuroraError(
+          `Package '${manifest.id}' attempted to read undeclared host environment variable '${variableName}'.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_PERMISSION_DENIED,
+          }
+        );
+      }
+
+      if (value === null) {
+        if (declaration.required) {
+          throw new AuroraError(
+            `Package '${manifest.id}' requires host environment variable '${variableName}', but no value is available.`,
+            {
+              code:
+                ErrorCodes
+                  .PACKAGE_ENVIRONMENT_REQUIRED,
+            }
+          );
+        }
+
+        return null;
+      }
+
+      if (
+        typeof value !==
+          "string" ||
+        value.includes("\0")
+      ) {
+        throw new AuroraError(
+          `Package '${manifest.id}' host environment reader returned an invalid value for '${variableName}'.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_EXECUTION_FAILED,
+          }
+        );
+      }
+
+      const byteLength =
+        Buffer.byteLength(
+          value,
+          "utf8"
+        );
+
+      if (
+        byteLength >
+        PACKAGE_ENVIRONMENT_VALUE_MAX_BYTES
+      ) {
+        throw new AuroraError(
+          `Package '${manifest.id}' host environment value '${variableName}' exceeded the per-value read limit.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_EXECUTION_FAILED,
+          }
+        );
+      }
+
+      if (
+        environmentBudget.releasedBytes +
+          byteLength >
+        PACKAGE_ENVIRONMENT_LIFECYCLE_MAX_BYTES
+      ) {
+        throw new AuroraError(
+          `Package '${manifest.id}' exceeded the ${PACKAGE_ENVIRONMENT_LIFECYCLE_MAX_BYTES} byte host environment read budget for one lifecycle execution.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_READ_LIMIT,
+            suggestion:
+              "Reduce host environment reads or move large data through a purpose-built bounded capability.",
+          }
+        );
+      }
+
+      environmentBudget.releasedBytes +=
+        byteLength;
+
+      return value;
+    }
 
     if (
       request.capability ===

@@ -10,6 +10,10 @@ import type {
   PackageExecutionPolicy,
 } from "../execution/packageCapabilityPolicy.js";
 
+import type {
+  PackageEnvironmentValueProvider,
+} from "../execution/packageEnvironmentBroker.js";
+
 import {
   CacheManager,
 } from "../cache/cacheManager.js";
@@ -88,6 +92,16 @@ export interface PackageInstallerOptions {
    */
   executionPolicy?:
     PackageExecutionPolicy;
+
+  /**
+   * Trusted host data-plane only.
+   *
+   * No default provider exists. Package manifests,
+   * project configuration, and normal CLI inputs
+   * cannot populate this provider.
+   */
+  environmentProvider?:
+    PackageEnvironmentValueProvider;
 }
 
 function checkConflicts(
@@ -149,6 +163,9 @@ export class PackageInstaller {
   private readonly executionPolicy:
     PackageExecutionPolicy;
 
+  private readonly environmentProvider:
+    PackageEnvironmentValueProvider | undefined;
+
   constructor(
     options:
       PackageInstallerOptions = {}
@@ -169,6 +186,9 @@ export class PackageInstaller {
     this.executionPolicy =
       options.executionPolicy ??
       {};
+
+    this.environmentProvider =
+      options.environmentProvider;
   }
 
   async install(
@@ -333,7 +353,9 @@ export class PackageInstaller {
       new PackageWorker(
         this.packageRoot,
         this.executionPolicy,
-        this.trustPolicy
+        this.trustPolicy,
+        undefined,
+        this.environmentProvider
       );
 
     try {
