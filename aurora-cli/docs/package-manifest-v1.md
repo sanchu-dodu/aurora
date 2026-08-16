@@ -148,6 +148,96 @@ Executable installer, hook, or migration files require `package.code.execute`. T
 
 Capability declarations are enforced at Aurora package execution boundaries. Executable package code runs through a restricted Node worker process, while privileged project mutations are brokered by the host and checked against manifest declarations and host policy. Unsupported, undeclared, or host-denied capabilities fail closed. This restricted Node execution boundary is not an operating-system sandbox.
 
+## Project file read declarations
+
+Packages that require read-only project context must explicitly declare every project file they may request.
+
+```json
+{
+  "capabilities": [
+    "project.files.read"
+  ],
+  "projectFileReads": [
+    {
+      "path": "package.json",
+      "required": true
+    }
+  ]
+}
+```
+
+The `projectFileReads` field is optional. Existing manifests that omit it retain field-absence semantics; Aurora does not synthesize `projectFileReads: []`.
+
+Each declaration contains:
+
+- `path`: an exact canonical relative POSIX project path. Absolute paths, backslashes, traversal segments, directory declarations, aliases, and glob patterns are not supported.
+- `required`: whether execution requires the declared file to exist.
+
+A manifest may declare at most 50 project-file reads, and declared paths must be unique. A non-empty `projectFileReads` array requires `project.files.read`, and declaring `project.files.read` requires at least one explicitly named project file.
+
+Package Trust cryptographically binds `projectFileReads` because the signing document covers the complete manifest except for `signature.value`. Changing a declared path or its `required` flag invalidates the existing package signature.
+
+### Trusted host admission
+
+Manifest declaration does not grant project-file access by itself. Trusted `PackageExecutionPolicy` must contain a matching `packageProjectFileGrants` entry scoped to the exact authenticated `publisherId`, exact package `packageId`, and explicit path list.
+
+Generic `allowedCapabilities` cannot grant `project.files.read`. An exact project-file grant for one publisher or package does not authorize another publisher or package, and granting one declared path does not authorize another declared path.
+
+Project-file authority does not propagate through dependency relationships. A root package grant does not authorize a dependency processed by the same `PackageWorker`; every package that requires project-file access needs its own exact publisher/package/path grant.
+
+Package manifests, normal package-install CLI inputs, project configuration, and project environment values cannot construct `packageProjectFileGrants`. Project-file authority remains trusted host policy.
+
+### Protected read surfaces
+
+Aurora applies a host-owned intrinsic deny policy even when a path is both declared and granted. Project-file reads cannot access:
+
+- `.git/**`
+- `.aurora/**`
+- `.env`
+- `.env.*`
+- `.npmrc`
+- `.yarnrc`
+- `.yarnrc.yml`
+- `.netrc`
+- `_netrc`
+- `.pypirc`
+
+Protected names are denied case-insensitively and alternate separators are handled defensively by the read policy.
+
+`package.json` and project lockfiles are not intrinsically blocked from read-only access, but they remain unavailable unless the exact path is declared by the package and admitted by trusted host policy.
+
+### Brokered runtime API
+
+After manifest validation and exact host-policy admission, package code may request a declared file only through:
+
+```text
+context.project.files.readText(path)
+```
+
+`PackageWorker` constructs the host-side project-file broker from the active `InstallerContext` project root for each installation. Reusing a `PackageWorker` with another project therefore creates a new broker bound to the new project root rather than retaining stale project-root authority.
+
+The restricted package worker does not receive direct filesystem permission for the project root. Worker filesystem permission remains limited to the worker runtime root and package directory; project-file contents cross the execution boundary only through the host capability broker.
+
+The host broker applies project-boundary validation, rejects symbolic-link or junction escapes, opens the exact candidate file, verifies that it is a regular file, and revalidates opened-file identity before releasing content.
+
+### File semantics and limits
+
+- A required declaration whose file is absent fails with `PACKAGE_PROJECT_FILE_REQUIRED`.
+- An optional declaration whose file is genuinely absent returns `null`.
+- Empty files return an empty string.
+- Only regular UTF-8 text files are released. Invalid UTF-8 and NUL-containing text fail closed.
+- One project file may contain at most 256 KiB.
+- One lifecycle execution may receive at most 1 MiB of project-file data in total.
+- Every successful non-empty repeated read counts again toward the 1 MiB lifecycle budget.
+- Optional `null` results and empty-string results consume zero lifecycle-budget bytes.
+- Exceeding either read limit fails with `PACKAGE_READ_LIMIT`.
+
+Project-file contents are not automatically classified as package secrets and are not automatically added to the exact-value secret-redaction set. Packages that require secret material must use explicit `secrets` declarations and `host.secrets.read`.
+
+`project.files.read` does not grant project writes, host environment access, secret access, process execution, or network access. `network.access` and `process.execute` remain unsupported package capabilities.
+
+As with the rest of package execution, this restricted Node worker is not an operating-system sandbox.
+
 ## Host environment declarations
 
 Packages that require non-secret host context must explicitly name every host environment variable they may request.

@@ -31,6 +31,10 @@ import {
 } from "../execution/packageEnvironmentBroker.js";
 
 import {
+  PackageProjectFileReadBroker,
+} from "../execution/packageProjectFileReadBroker.js";
+
+import {
   PackageSecretBroker,
   type PackageSecretReader,
 } from "../execution/packageSecretBroker.js";
@@ -71,8 +75,11 @@ export class PackageWorker {
   private readonly capabilityPolicy:
     PackageCapabilityPolicy;
 
-  private readonly executionHost:
-    PackageExecutionHost;
+  private readonly secretReader:
+    PackageSecretReader;
+
+  private readonly environmentReader:
+    PackageEnvironmentBroker | undefined;
 
   constructor(
     private readonly packageRoot =
@@ -94,20 +101,16 @@ export class PackageWorker {
         policy
       );
 
-    const environmentReader =
+    this.secretReader =
+      secretReader;
+
+    this.environmentReader =
       environmentProvider ===
         undefined
         ? undefined
         : new PackageEnvironmentBroker(
             environmentProvider
           );
-
-    this.executionHost =
-      new PackageExecutionHost(
-        this.capabilityPolicy,
-        secretReader,
-        environmentReader
-      );
   }
 
   async install(
@@ -178,6 +181,22 @@ export class PackageWorker {
         manifest
       );
 
+    const projectFileReader =
+      new PackageProjectFileReadBroker({
+        projectRoot:
+          context.getProjectPath(),
+        accessPolicy:
+          this.capabilityPolicy,
+      });
+
+    const executionHost =
+      new PackageExecutionHost(
+        this.capabilityPolicy,
+        this.secretReader,
+        this.environmentReader,
+        projectFileReader
+      );
+
     console.log(
       `Installing ${packageId}...`
     );
@@ -204,7 +223,7 @@ export class PackageWorker {
       );
 
     if (hookDeclaration) {
-      await this.executionHost.run(
+      await executionHost.run(
         manifest,
         this.packageRoot,
         hookDeclaration.path,
@@ -215,7 +234,7 @@ export class PackageWorker {
 
     if (installerDeclaration) {
       const result =
-        await this.executionHost.run(
+        await executionHost.run(
           manifest,
           this.packageRoot,
           installerDeclaration.path,
@@ -267,7 +286,7 @@ export class PackageWorker {
     }
 
     if (hookDeclaration) {
-      await this.executionHost.run(
+      await executionHost.run(
         manifest,
         this.packageRoot,
         hookDeclaration.path,

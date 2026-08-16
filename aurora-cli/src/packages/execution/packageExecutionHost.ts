@@ -42,6 +42,15 @@ import {
 } from "./packageEnvironmentBroker.js";
 
 import {
+  PACKAGE_PROJECT_FILE_MAX_BYTES,
+  type PackageProjectFileReader,
+} from "./packageProjectFileReadBroker.js";
+
+import {
+  assertPackageProjectFileRead,
+} from "./packageProjectFileReadPolicy.js";
+
+import {
   assertPackageProjectFileWrite,
 } from "./packageProjectWritePolicy.js";
 
@@ -68,6 +77,9 @@ const PACKAGE_MAX_OLD_SPACE_MB =
 export const PACKAGE_ENVIRONMENT_LIFECYCLE_MAX_BYTES =
   256 * 1024;
 
+export const PACKAGE_PROJECT_FILE_LIFECYCLE_MAX_BYTES =
+  1024 * 1024;
+
 const activeExecutions =
   new Set<string>();
 
@@ -87,7 +99,9 @@ export class PackageExecutionHost {
     private readonly secretReader?:
       PackageSecretReader,
     private readonly environmentReader?:
-      PackageEnvironmentReader
+      PackageEnvironmentReader,
+    private readonly projectFileReader?:
+      PackageProjectFileReader
   ) {}
 
   async run(
@@ -220,6 +234,10 @@ export class PackageExecutionHost {
           new Set<string>();
 
         const environmentBudget = {
+          releasedBytes: 0,
+        };
+
+        const projectFileBudget = {
           releasedBytes: 0,
         };
 
@@ -403,7 +421,8 @@ export class PackageExecutionHost {
                 manifest,
                 context,
                 releasedSecrets,
-                environmentBudget
+                environmentBudget,
+                projectFileBudget
               ).then(
                 value => {
                   sendResponse(
@@ -686,12 +705,164 @@ export class PackageExecutionHost {
     releasedSecrets: Set<string>,
     environmentBudget: {
       releasedBytes: number;
+    },
+    projectFileBudget: {
+      releasedBytes: number;
     }
   ): Promise<unknown> {
     this.policy.assertCapability(
       manifest,
       request.capability
     );
+
+    if (
+      request.capability ===
+        "project.files.read" &&
+      request.action ===
+        "readProjectFileText"
+    ) {
+      if (
+        !isRecord(
+          request.input
+        ) ||
+        Object.keys(
+          request.input
+        ).length !== 1 ||
+        typeof request.input
+          .path !==
+          "string"
+      ) {
+        throw invalidRequest(
+          manifest.id,
+          request.action
+        );
+      }
+
+      const relativePath =
+        request.input.path;
+
+      this.policy
+        .assertProjectFileReadAccess(
+          manifest,
+          relativePath
+        );
+
+      assertPackageProjectFileRead(
+        manifest.id,
+        relativePath
+      );
+
+      if (!this.projectFileReader) {
+        throw new AuroraError(
+          `Package '${manifest.id}' requested project file '${relativePath}', but no trusted project-file reader is configured.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_PERMISSION_DENIED,
+            suggestion:
+              "Configure Aurora's trusted host-side project-file broker before permitting project.files.read.",
+          }
+        );
+      }
+
+      const value =
+        await this.projectFileReader
+          .readProjectFileText(
+            manifest,
+            relativePath
+          );
+
+      const declaration =
+        (manifest.projectFileReads ?? [])
+          .find(
+            candidate =>
+              candidate.path ===
+              relativePath
+          );
+
+      if (!declaration) {
+        throw new AuroraError(
+          `Package '${manifest.id}' attempted to read undeclared project file '${relativePath}'.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_PERMISSION_DENIED,
+          }
+        );
+      }
+
+      if (value === null) {
+        if (declaration.required) {
+          throw new AuroraError(
+            `Package '${manifest.id}' requires project file '${relativePath}', but no value is available.`,
+            {
+              code:
+                ErrorCodes
+                  .PACKAGE_PROJECT_FILE_REQUIRED,
+            }
+          );
+        }
+
+        return null;
+      }
+
+      if (
+        typeof value !==
+          "string" ||
+        value.includes("\0")
+      ) {
+        throw new AuroraError(
+          `Package '${manifest.id}' project-file reader returned an invalid value for '${relativePath}'.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_EXECUTION_FAILED,
+          }
+        );
+      }
+
+      const byteLength =
+        Buffer.byteLength(
+          value,
+          "utf8"
+        );
+
+      if (
+        byteLength >
+        PACKAGE_PROJECT_FILE_MAX_BYTES
+      ) {
+        throw new AuroraError(
+          `Package '${manifest.id}' project file '${relativePath}' exceeded the ${PACKAGE_PROJECT_FILE_MAX_BYTES} byte per-file read limit.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_READ_LIMIT,
+          }
+        );
+      }
+
+      if (
+        projectFileBudget.releasedBytes +
+          byteLength >
+        PACKAGE_PROJECT_FILE_LIFECYCLE_MAX_BYTES
+      ) {
+        throw new AuroraError(
+          `Package '${manifest.id}' exceeded the ${PACKAGE_PROJECT_FILE_LIFECYCLE_MAX_BYTES} byte project-file read budget for one lifecycle execution.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_READ_LIMIT,
+            suggestion:
+              "Reduce repeated project-file reads or request smaller explicitly declared project files.",
+          }
+        );
+      }
+
+      projectFileBudget.releasedBytes +=
+        byteLength;
+
+      return value;
+    }
 
     if (
       request.capability ===

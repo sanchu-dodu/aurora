@@ -179,6 +179,14 @@ const PackageHostEnvironmentSchema =
       z.boolean(),
   }).strict();
 
+const PackageProjectFileReadSchema =
+  z.object({
+    path:
+      ManifestPathSchema,
+    required:
+      z.boolean(),
+  }).strict();
+
 const PlatformSchema =
   z.object({
     os: z.array(
@@ -321,6 +329,12 @@ export const ManifestSchema =
       )
         .max(50)
         .optional(),
+    projectFileReads:
+      z.array(
+        PackageProjectFileReadSchema
+      )
+        .max(50)
+        .optional(),
     platforms: PlatformSchema,
     lifecycle: LifecycleSchema,
     links: z.object({
@@ -406,6 +420,15 @@ export const ManifestSchema =
             ).map(
               (variable) =>
                 variable.name
+            ),
+          ],
+          [
+            "projectFileReads",
+            (
+              manifest.projectFileReads ?? []
+            ).map(
+              (file) =>
+                file.path
             ),
           ],
           [
@@ -706,6 +729,37 @@ export const ManifestSchema =
             path: ["hostEnvironment"],
             message:
               "The host.environment.read capability requires at least one explicitly declared host environment variable.",
+          });
+        }
+
+        const declaredProjectFileReads =
+          manifest.projectFileReads ?? [];
+
+        if (
+          declaredProjectFileReads.length > 0 &&
+          !capabilitySet.has(
+            "project.files.read"
+          )
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["capabilities"],
+            message:
+              "Package project-file-read declarations require the project.files.read capability.",
+          });
+        }
+
+        if (
+          capabilitySet.has(
+            "project.files.read"
+          ) &&
+          declaredProjectFileReads.length === 0
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["projectFileReads"],
+            message:
+              "The project.files.read capability requires at least one explicitly declared project file.",
           });
         }
 

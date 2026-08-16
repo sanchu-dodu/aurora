@@ -59,6 +59,14 @@ export interface PackageWorkerContext {
     content: string
   ): Promise<void>;
 
+  readonly project: {
+    readonly files: {
+      readText(
+        filePath: string
+      ): Promise<string | null>;
+    };
+  };
+
   readonly config: {
     addDependency(
       packageName: string,

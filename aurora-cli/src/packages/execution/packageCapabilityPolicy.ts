@@ -23,6 +23,7 @@ export const BROKERED_PACKAGE_CAPABILITIES = [
   "host.environment.read",
   "host.secrets.read",
   "package.code.execute",
+  "project.files.read",
   "project.files.write",
   "project.dependencies.write",
   "project.environment.write",
@@ -50,6 +51,13 @@ const brokeredCapabilities =
     BROKERED_PACKAGE_CAPABILITIES
   );
 
+export interface PackageProjectFileGrant {
+  readonly publisherId: string;
+  readonly packageId: string;
+  readonly paths:
+    readonly string[];
+}
+
 export interface PackageEnvironmentGrant {
   readonly publisherId: string;
   readonly packageId: string;
@@ -67,6 +75,14 @@ export interface PackageSecretGrant {
 export interface PackageExecutionPolicy {
   readonly allowedCapabilities?:
     readonly PackageCapability[];
+
+  /*
+   * High-trust host admission for project file reads.
+   * Matching is exact across publisher id, package id,
+   * and canonical manifest-declared relative path.
+   */
+  readonly packageProjectFileGrants?:
+    readonly PackageProjectFileGrant[];
 
   /*
    * High-trust host admission for non-secret host
@@ -94,6 +110,7 @@ type CapabilityManifest =
       | "id"
       | "publisher"
       | "capabilities"
+      | "projectFileReads"
       | "hostEnvironment"
       | "secrets"
     >
@@ -102,6 +119,9 @@ type CapabilityManifest =
 export class PackageCapabilityPolicy {
   private readonly allowedCapabilities:
     ReadonlySet<PackageCapability>;
+
+  private readonly packageProjectFileGrants:
+    readonly PackageProjectFileGrant[];
 
   private readonly packageEnvironmentGrants:
     readonly PackageEnvironmentGrant[];
@@ -126,11 +146,26 @@ export class PackageCapabilityPolicy {
         ).filter(
           capability =>
             capability !==
+              "project.files.read" &&
+            capability !==
               "host.environment.read" &&
             capability !==
               "host.secrets.read"
         )
       );
+
+    this.packageProjectFileGrants =
+      (policy.packageProjectFileGrants ?? [])
+        .map(
+          grant => ({
+            publisherId:
+              grant.publisherId,
+            packageId:
+              grant.packageId,
+            paths:
+              [...grant.paths],
+          })
+        );
 
     this.packageEnvironmentGrants =
       (policy.packageEnvironmentGrants ?? [])
@@ -177,6 +212,25 @@ export class PackageCapabilityPolicy {
           capability,
           "is not supported by the package capability broker"
         );
+      }
+
+      if (
+        capability ===
+        "project.files.read"
+      ) {
+        if (
+          !this.hasManifestProjectFileGrant(
+            manifest
+          )
+        ) {
+          this.deny(
+            manifest.id,
+            capability,
+            "has no matching package-scoped project-file grant in the active package execution policy"
+          );
+        }
+
+        continue;
       }
 
       if (
@@ -263,6 +317,25 @@ export class PackageCapabilityPolicy {
 
     if (
       capability ===
+      "project.files.read"
+    ) {
+      if (
+        !this.hasManifestProjectFileGrant(
+          manifest
+        )
+      ) {
+        this.deny(
+          manifest.id,
+          capability,
+          "has no matching package-scoped project-file grant in the active package execution policy"
+        );
+      }
+
+      return;
+    }
+
+    if (
+      capability ===
       "host.environment.read"
     ) {
       if (
@@ -308,6 +381,46 @@ export class PackageCapabilityPolicy {
         manifest.id,
         capability,
         "is denied by the active package execution policy"
+      );
+    }
+  }
+
+  assertProjectFileReadAccess(
+    manifest:
+      CapabilityManifest,
+    relativePath: string
+  ): void {
+    this.assertCapability(
+      manifest,
+      "project.files.read"
+    );
+
+    const declared =
+      (manifest.projectFileReads ?? [])
+        .some(
+          file =>
+            file.path ===
+            relativePath
+        );
+
+    if (!declared) {
+      this.denyProjectFileRead(
+        manifest.id,
+        relativePath,
+        "is not declared by the package manifest"
+      );
+    }
+
+    if (
+      !this.hasExactProjectFileGrant(
+        manifest,
+        relativePath
+      )
+    ) {
+      this.denyProjectFileRead(
+        manifest.id,
+        relativePath,
+        "is denied by the active package-scoped project-file policy"
       );
     }
   }
@@ -390,6 +503,53 @@ export class PackageCapabilityPolicy {
         "is denied by the active package-scoped secret policy"
       );
     }
+  }
+
+  private hasManifestProjectFileGrant(
+    manifest:
+      CapabilityManifest
+  ): boolean {
+    const declaredPaths =
+      new Set(
+        (manifest.projectFileReads ?? [])
+          .map(
+            file =>
+              file.path
+          )
+      );
+
+    return this.packageProjectFileGrants
+      .some(
+        grant =>
+          grant.publisherId ===
+            manifest.publisher.id &&
+          grant.packageId ===
+            manifest.id &&
+          grant.paths.some(
+            relativePath =>
+              declaredPaths.has(
+                relativePath
+              )
+          )
+      );
+  }
+
+  private hasExactProjectFileGrant(
+    manifest:
+      CapabilityManifest,
+    relativePath: string
+  ): boolean {
+    return this.packageProjectFileGrants
+      .some(
+        grant =>
+          grant.publisherId ===
+            manifest.publisher.id &&
+          grant.packageId ===
+            manifest.id &&
+          grant.paths.includes(
+            relativePath
+          )
+      );
   }
 
   private hasManifestEnvironmentGrant(
@@ -500,6 +660,23 @@ export class PackageCapabilityPolicy {
             .PACKAGE_PERMISSION_DENIED,
         suggestion:
           "Use a trusted package whose declared capabilities are supported and permitted by Aurora.",
+      }
+    );
+  }
+
+  private denyProjectFileRead(
+    packageId: string,
+    relativePath: string,
+    reason: string
+  ): never {
+    throw new AuroraError(
+      `Package '${packageId}' project file '${relativePath}' ${reason}.`,
+      {
+        code:
+          ErrorCodes
+            .PACKAGE_PERMISSION_DENIED,
+        suggestion:
+          "Grant only the exact trusted publisher, package, and manifest-declared project file paths required by the package.",
       }
     );
   }
