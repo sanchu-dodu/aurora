@@ -186,6 +186,39 @@ const context:
       );
     },
 
+    project: {
+      files: {
+        async readText(
+          filePath
+        ) {
+          const value =
+            await request(
+              "project.files.read",
+              "readProjectFileText",
+              {
+                path:
+                  filePath,
+              }
+            );
+
+          if (value === null) {
+            return null;
+          }
+
+          if (
+            typeof value !==
+              "string"
+          ) {
+            throw new Error(
+              "Package project-file broker returned an invalid response."
+            );
+          }
+
+          return value;
+        },
+      },
+    },
+
     config: {
       async addDependency(
         packageName,

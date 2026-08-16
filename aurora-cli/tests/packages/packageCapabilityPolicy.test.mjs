@@ -64,6 +64,7 @@ test(
         "host.environment.read",
         "host.secrets.read",
         "package.code.execute",
+        "project.files.read",
         "project.files.write",
         "project.dependencies.write",
         "project.environment.write",
@@ -849,5 +850,340 @@ test(
         return true;
       }
     );
+  }
+);
+
+function projectFileReadManifest(
+  {
+    id = "test-package",
+    publisherId = "aurora-tests",
+    capabilities = [
+      "project.files.read",
+    ],
+    projectFileReads = [
+      {
+        path: "package.json",
+        required: true,
+      },
+    ],
+  } = {}
+) {
+  return {
+    ...manifest(
+      capabilities,
+      { id, publisherId }
+    ),
+    projectFileReads,
+  };
+}
+
+function projectFileGrant(
+  {
+    publisherId = "aurora-tests",
+    packageId = "test-package",
+    paths = ["package.json"],
+  } = {}
+) {
+  return {
+    publisherId,
+    packageId,
+    paths,
+  };
+}
+
+test(
+  "default package policy excludes project file reads",
+  () => {
+    assert.equal(
+      DEFAULT_PACKAGE_ALLOWED_CAPABILITIES
+        .includes(
+          "project.files.read"
+        ),
+      false
+    );
+  }
+);
+
+test(
+  "default package policy denies project file reads",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy();
+
+    assert.throws(
+      () =>
+        policy.assertManifest(
+          projectFileReadManifest()
+        ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        assert.match(
+          error.message,
+          /package-scoped project-file grant/
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "generic allowedCapabilities cannot grant project file reads",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        allowedCapabilities: [
+          "project.files.read",
+        ],
+      });
+
+    assert.throws(
+      () =>
+        policy.assertManifest(
+          projectFileReadManifest()
+        ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        assert.match(
+          error.message,
+          /package-scoped project-file grant/
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "matching exact project file grant admits capability and path",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageProjectFileGrants: [
+          projectFileGrant(),
+        ],
+      });
+
+    const candidate =
+      projectFileReadManifest();
+
+    assert.doesNotThrow(
+      () => policy.assertManifest(candidate)
+    );
+
+    assert.doesNotThrow(
+      () => policy.assertCapability(
+        candidate,
+        "project.files.read"
+      )
+    );
+
+    assert.doesNotThrow(
+      () => policy.assertProjectFileReadAccess(
+        candidate,
+        "package.json"
+      )
+    );
+  }
+);
+
+test(
+  "wrong package project file grant does not propagate to a dependency",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageProjectFileGrants: [
+          projectFileGrant({
+            packageId: "root-package",
+          }),
+        ],
+      });
+
+    assert.throws(
+      () =>
+        policy.assertManifest(
+          projectFileReadManifest({
+            id: "dependency-package",
+          })
+        ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "wrong publisher project file grant fails closed",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageProjectFileGrants: [
+          projectFileGrant({
+            publisherId: "other-publisher",
+          }),
+        ],
+      });
+
+    assert.throws(
+      () =>
+        policy.assertManifest(
+          projectFileReadManifest()
+        ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "project file grant cannot authorize an undeclared path",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageProjectFileGrants: [
+          projectFileGrant({
+            paths: [
+              "package.json",
+              "config/hidden.json",
+            ],
+          }),
+        ],
+      });
+
+    const candidate =
+      projectFileReadManifest();
+
+    assert.doesNotThrow(
+      () => policy.assertManifest(candidate)
+    );
+
+    assert.throws(
+      () => policy.assertProjectFileReadAccess(
+        candidate,
+        "config/hidden.json"
+      ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        assert.match(
+          error.message,
+          /not declared/
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "partial project file grant authorizes only exact declared paths",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageProjectFileGrants: [
+          projectFileGrant({
+            paths: ["package.json"],
+          }),
+        ],
+      });
+
+    const candidate =
+      projectFileReadManifest({
+        projectFileReads: [
+          {
+            path: "package.json",
+            required: true,
+          },
+          {
+            path: "config/app.json",
+            required: false,
+          },
+        ],
+      });
+
+    assert.doesNotThrow(
+      () => policy.assertManifest(candidate)
+    );
+
+    assert.doesNotThrow(
+      () => policy.assertProjectFileReadAccess(
+        candidate,
+        "package.json"
+      )
+    );
+
+    assert.throws(
+      () => policy.assertProjectFileReadAccess(
+        candidate,
+        "config/app.json"
+      ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        assert.match(
+          error.message,
+          /project-file policy/
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "network and process capabilities remain unsupported with project file reads",
+  () => {
+    for (const capability of [
+      "network.access",
+      "process.execute",
+    ]) {
+      const policy =
+        new PackageCapabilityPolicy({
+          allowedCapabilities: [
+            capability,
+          ],
+          packageProjectFileGrants: [
+            projectFileGrant(),
+          ],
+        });
+
+      assert.throws(
+        () =>
+          policy.assertManifest(
+            manifest([capability])
+          ),
+        error => {
+          assert.equal(
+            error.code,
+            "PACKAGE_PERMISSION_DENIED"
+          );
+          assert.match(
+            error.message,
+            /not supported/
+          );
+          return true;
+        }
+      );
+    }
   }
 );
