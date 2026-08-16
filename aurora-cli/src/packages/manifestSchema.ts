@@ -165,6 +165,19 @@ const PackageSecretSchema =
     required:
       z.boolean(),
   }).strict();
+const PackageHostEnvironmentSchema =
+  z.object({
+    name:
+      z.string()
+        .min(1)
+        .max(128)
+        .regex(
+          ENVIRONMENT_NAME_PATTERN,
+          "Host environment names must use uppercase letters, numbers, and underscores."
+        ),
+    required:
+      z.boolean(),
+  }).strict();
 
 const PlatformSchema =
   z.object({
@@ -302,6 +315,12 @@ export const ManifestSchema =
       )
         .max(50)
         .optional(),
+    hostEnvironment:
+      z.array(
+        PackageHostEnvironmentSchema
+      )
+        .max(50)
+        .optional(),
     platforms: PlatformSchema,
     lifecycle: LifecycleSchema,
     links: z.object({
@@ -378,6 +397,15 @@ export const ManifestSchema =
             ).map(
               (secret) =>
                 secret.name
+            ),
+          ],
+          [
+            "hostEnvironment",
+            (
+              manifest.hostEnvironment ?? []
+            ).map(
+              (variable) =>
+                variable.name
             ),
           ],
           [
@@ -647,6 +675,37 @@ export const ManifestSchema =
             path: ["secrets"],
             message:
               "The host.secrets.read capability requires at least one explicitly declared package secret.",
+          });
+        }
+
+        const declaredHostEnvironment =
+          manifest.hostEnvironment ?? [];
+
+        if (
+          declaredHostEnvironment.length > 0 &&
+          !capabilitySet.has(
+            "host.environment.read"
+          )
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["capabilities"],
+            message:
+              "Package host-environment declarations require the host.environment.read capability.",
+          });
+        }
+
+        if (
+          capabilitySet.has(
+            "host.environment.read"
+          ) &&
+          declaredHostEnvironment.length === 0
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["hostEnvironment"],
+            message:
+              "The host.environment.read capability requires at least one explicitly declared host environment variable.",
           });
         }
 

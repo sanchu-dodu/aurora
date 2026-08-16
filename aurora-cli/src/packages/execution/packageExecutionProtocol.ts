@@ -72,6 +72,14 @@ export interface PackageWorkerContext {
     ): Promise<string | null>;
   };
 
+  readonly host: {
+    readonly environment: {
+      read(
+        name: string
+      ): Promise<string | null>;
+    };
+  };
+
   readonly env: {
     addVariables(
       variables: string[]

@@ -148,6 +148,78 @@ Executable installer, hook, or migration files require `package.code.execute`. T
 
 Capability declarations are enforced at Aurora package execution boundaries. Executable package code runs through a restricted Node worker process, while privileged project mutations are brokered by the host and checked against manifest declarations and host policy. Unsupported, undeclared, or host-denied capabilities fail closed. This restricted Node execution boundary is not an operating-system sandbox.
 
+## Host environment declarations
+
+Packages that require non-secret host context must explicitly name every host environment variable they may request.
+
+```json
+{
+  "capabilities": [
+    "host.environment.read"
+  ],
+  "hostEnvironment": [
+    {
+      "name": "AURORA_REGION",
+      "required": true
+    }
+  ]
+}
+```
+
+The `hostEnvironment` field is optional. Existing manifests that omit it retain field-absence semantics; Aurora does not synthesize `hostEnvironment: []`.
+
+Each declaration contains:
+
+- `name`: a canonical uppercase environment-style identifier matching `[A-Z][A-Z0-9_]*`, at most 128 characters.
+- `required`: whether execution requires a host-provided value to exist.
+
+Names must be unique within the manifest. A non-empty `hostEnvironment` array requires `host.environment.read`, and declaring `host.environment.read` requires at least one explicitly named host environment variable.
+
+Package Trust cryptographically binds `hostEnvironment` because the signing document covers the manifest except for `signature.value`. Changing a variable name or its `required` flag invalidates the existing package signature.
+
+### Trusted host admission
+
+Manifest declaration does not grant host environment access by itself. The trusted package execution policy must contain a matching `packageEnvironmentGrants` entry. Each grant is scoped to an exact authenticated `publisherId`, exact package `packageId`, and explicit variable-name list.
+
+Generic `allowedCapabilities` cannot grant `host.environment.read`, even if a trusted caller places that capability in the broad allow-list.
+
+A grant for one publisher or package does not authorize another publisher or package. Granting one declared variable does not authorize another declared variable.
+
+Environment authority does not propagate through dependency relationships. A root package grant does not authorize a dependency processed by the same `PackageWorker`; every dependency that requires host environment access needs its own exact publisher/package/variable grant.
+
+The normal Aurora CLI, package manifest, project configuration, and project environment cannot create `packageEnvironmentGrants`. This keeps package-controlled input from promoting its own host authority.
+
+### Trusted value provider
+
+Authority and data are separate. `PackageInstaller` can receive an explicit programmatic `environmentProvider`, which `PackageWorker` wraps in `PackageEnvironmentBroker`. Aurora does not create a default host environment provider.
+
+The broker, `PackageWorker`, and `PackageInstaller` do not use the host process `process.env` as the package data source. Declared values are not copied into the worker `process.env`.
+
+After manifest validation and exact host-policy authorization, package code may request an admitted value only through:
+
+```text
+context.host.environment.read(name)
+```
+
+The restricted worker therefore receives only the value returned for that explicitly authorized request. This capability is not arbitrary host environment access.
+
+### Value semantics and limits
+
+- A required declaration with no available value fails with `PACKAGE_ENVIRONMENT_REQUIRED`.
+- An optional declaration with no available value returns `null`.
+- An empty string is a valid available value.
+- NUL-containing values and non-string provider results fail closed.
+- One returned value may contain at most 64 KiB measured as UTF-8 bytes.
+- One lifecycle execution may receive at most 256 KiB of host environment data in total.
+- Repeated reads count again toward the 256 KiB lifecycle budget.
+- Exceeding the lifecycle budget fails with `PACKAGE_READ_LIMIT`.
+
+`hostEnvironment` is a non-secret channel. Secret material must use explicit package secret declarations and `host.secrets.read` instead. Ordinary host environment values are not automatically added to the Phase 3 exact-value secret-redaction set.
+
+`network.access` and `process.execute` remain separate unsupported package capabilities. `host.environment.read` does not imply either capability.
+
+As with the rest of package execution, the restricted Node worker is not an operating-system sandbox.
+
 ## Package secret declarations
 
 Packages must explicitly name every host-managed secret they may request.

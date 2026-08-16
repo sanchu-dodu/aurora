@@ -232,6 +232,38 @@ const context:
       },
     },
 
+    host: {
+      environment: {
+        async read(
+          name
+        ) {
+          const value =
+            await request(
+              "host.environment.read",
+              "readEnvironment",
+              {
+                name,
+              }
+            );
+
+          if (value === null) {
+            return null;
+          }
+
+          if (
+            typeof value !==
+              "string"
+          ) {
+            throw new Error(
+              "Package host environment broker returned an invalid response."
+            );
+          }
+
+          return value;
+        },
+      },
+    },
+
     env: {
       async addVariables(
         variables

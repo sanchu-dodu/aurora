@@ -61,6 +61,7 @@ test(
     assert.deepEqual(
       [...BROKERED_PACKAGE_CAPABILITIES],
       [
+        "host.environment.read",
         "host.secrets.read",
         "package.code.execute",
         "project.files.write",
@@ -600,6 +601,253 @@ test(
           ]),
           "project.files.write"
         )
+    );
+  }
+);
+
+function environmentManifest(
+  {
+    id = "test-package",
+    publisherId = "aurora-tests",
+    capabilities = ["host.environment.read"],
+    hostEnvironment = [
+      {
+        name: "AURORA_REGION",
+        required: true,
+      },
+    ],
+  } = {}
+) {
+  return {
+    ...manifest(
+      capabilities,
+      { id, publisherId }
+    ),
+    hostEnvironment,
+  };
+}
+
+function environmentGrant(
+  {
+    publisherId = "aurora-tests",
+    packageId = "test-package",
+    variables = ["AURORA_REGION"],
+  } = {}
+) {
+  return {
+    publisherId,
+    packageId,
+    variables,
+  };
+}
+
+test(
+  "default package policy excludes host environment reads",
+  () => {
+    assert.equal(
+      DEFAULT_PACKAGE_ALLOWED_CAPABILITIES.includes(
+        "host.environment.read"
+      ),
+      false
+    );
+  }
+);
+
+test(
+  "default package policy denies host environment access",
+  () => {
+    const policy = new PackageCapabilityPolicy();
+
+    assert.throws(
+      () => policy.assertManifest(environmentManifest()),
+      error => {
+        assert.equal(error.code, "PACKAGE_PERMISSION_DENIED");
+        assert.match(error.message, /package-scoped environment grant/);
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "generic allowedCapabilities cannot grant host environment reads",
+  () => {
+    const policy = new PackageCapabilityPolicy({
+      allowedCapabilities: ["host.environment.read"],
+    });
+
+    assert.throws(
+      () => policy.assertManifest(environmentManifest()),
+      error => {
+        assert.equal(error.code, "PACKAGE_PERMISSION_DENIED");
+        assert.match(error.message, /package-scoped environment grant/);
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "matching exact environment grant admits capability and variable",
+  () => {
+    const policy = new PackageCapabilityPolicy({
+      packageEnvironmentGrants: [environmentGrant()],
+    });
+
+    const candidate = environmentManifest();
+
+    assert.doesNotThrow(() => policy.assertManifest(candidate));
+    assert.doesNotThrow(() => policy.assertCapability(
+      candidate,
+      "host.environment.read"
+    ));
+    assert.doesNotThrow(() => policy.assertEnvironmentAccess(
+      candidate,
+      "AURORA_REGION"
+    ));
+  }
+);
+
+test(
+  "wrong package environment grant fails closed",
+  () => {
+    const policy = new PackageCapabilityPolicy({
+      packageEnvironmentGrants: [
+        environmentGrant({ packageId: "dependency-package" }),
+      ],
+    });
+
+    assert.throws(
+      () => policy.assertManifest(environmentManifest()),
+      error => {
+        assert.equal(error.code, "PACKAGE_PERMISSION_DENIED");
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "wrong publisher environment grant fails closed",
+  () => {
+    const policy = new PackageCapabilityPolicy({
+      packageEnvironmentGrants: [
+        environmentGrant({ publisherId: "other-publisher" }),
+      ],
+    });
+
+    assert.throws(
+      () => policy.assertManifest(environmentManifest()),
+      error => {
+        assert.equal(error.code, "PACKAGE_PERMISSION_DENIED");
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "partial environment grant authorizes only exact variables",
+  () => {
+    const policy = new PackageCapabilityPolicy({
+      packageEnvironmentGrants: [environmentGrant()],
+    });
+
+    const candidate = environmentManifest({
+      hostEnvironment: [
+        { name: "AURORA_REGION", required: true },
+        { name: "CI", required: false },
+      ],
+    });
+
+    assert.doesNotThrow(() => policy.assertManifest(candidate));
+    assert.doesNotThrow(() => policy.assertEnvironmentAccess(
+      candidate,
+      "AURORA_REGION"
+    ));
+
+    assert.throws(
+      () => policy.assertEnvironmentAccess(candidate, "CI"),
+      error => {
+        assert.equal(error.code, "PACKAGE_PERMISSION_DENIED");
+        assert.match(error.message, /package-scoped environment policy/);
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "environment grant cannot authorize an undeclared variable",
+  () => {
+    const policy = new PackageCapabilityPolicy({
+      packageEnvironmentGrants: [
+        environmentGrant({
+          variables: ["AURORA_REGION", "CI"],
+        }),
+      ],
+    });
+
+    const candidate = environmentManifest();
+
+    assert.throws(
+      () => policy.assertEnvironmentAccess(candidate, "CI"),
+      error => {
+        assert.equal(error.code, "PACKAGE_PERMISSION_DENIED");
+        assert.match(error.message, /not declared/);
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "environment grant cannot authorize an undeclared capability",
+  () => {
+    const policy = new PackageCapabilityPolicy({
+      packageEnvironmentGrants: [environmentGrant()],
+    });
+
+    const candidate = environmentManifest({
+      capabilities: [],
+    });
+
+    assert.throws(
+      () => policy.assertEnvironmentAccess(
+        candidate,
+        "AURORA_REGION"
+      ),
+      error => {
+        assert.equal(error.code, "PACKAGE_PERMISSION_DENIED");
+        assert.match(error.message, /not declared/);
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "environment grants do not grant ordinary capabilities",
+  () => {
+    const policy = new PackageCapabilityPolicy({
+      allowedCapabilities: ["package.code.execute"],
+      packageEnvironmentGrants: [environmentGrant()],
+    });
+
+    const candidate = environmentManifest({
+      capabilities: [
+        "host.environment.read",
+        "project.files.write",
+      ],
+    });
+
+    assert.throws(
+      () => policy.assertManifest(candidate),
+      error => {
+        assert.equal(error.code, "PACKAGE_PERMISSION_DENIED");
+        assert.match(error.message, /project\.files\.write/);
+        return true;
+      }
     );
   }
 );

@@ -20,6 +20,7 @@ export type PackageCapability =
  * It does NOT imply that the capability is enabled by default.
  */
 export const BROKERED_PACKAGE_CAPABILITIES = [
+  "host.environment.read",
   "host.secrets.read",
   "package.code.execute",
   "project.files.write",
@@ -29,11 +30,12 @@ export const BROKERED_PACKAGE_CAPABILITIES = [
   readonly PackageCapability[];
 
 /*
- * Secret access is intentionally absent.
+ * Scoped host read capabilities are intentionally absent.
  *
- * host.secrets.read is never admitted by the generic capability
- * allow-list. It requires a matching packageSecretGrants entry
- * for the authenticated publisher, package, and requested secret.
+ * host.environment.read and host.secrets.read are never admitted
+ * by the generic capability allow-list. Each requires a matching
+ * package-scoped grant for the authenticated publisher, package,
+ * and requested resource.
  */
 export const DEFAULT_PACKAGE_ALLOWED_CAPABILITIES = [
   "package.code.execute",
@@ -48,6 +50,13 @@ const brokeredCapabilities =
     BROKERED_PACKAGE_CAPABILITIES
   );
 
+export interface PackageEnvironmentGrant {
+  readonly publisherId: string;
+  readonly packageId: string;
+  readonly variables:
+    readonly string[];
+}
+
 export interface PackageSecretGrant {
   readonly publisherId: string;
   readonly packageId: string;
@@ -58,6 +67,14 @@ export interface PackageSecretGrant {
 export interface PackageExecutionPolicy {
   readonly allowedCapabilities?:
     readonly PackageCapability[];
+
+  /*
+   * High-trust host admission for non-secret host
+   * environment reads. Matching is exact across
+   * publisher id, package id, and variable name.
+   */
+  readonly packageEnvironmentGrants?:
+    readonly PackageEnvironmentGrant[];
 
   /*
    * High-trust host admission for package secret reads.
@@ -77,6 +94,7 @@ type CapabilityManifest =
       | "id"
       | "publisher"
       | "capabilities"
+      | "hostEnvironment"
       | "secrets"
     >
   >;
@@ -84,6 +102,9 @@ type CapabilityManifest =
 export class PackageCapabilityPolicy {
   private readonly allowedCapabilities:
     ReadonlySet<PackageCapability>;
+
+  private readonly packageEnvironmentGrants:
+    readonly PackageEnvironmentGrant[];
 
   private readonly packageSecretGrants:
     readonly PackageSecretGrant[];
@@ -93,9 +114,9 @@ export class PackageCapabilityPolicy {
       PackageExecutionPolicy = {}
   ) {
     /*
-     * Defense in depth: even if a trusted caller mistakenly
-     * places host.secrets.read in the broad allow-list, that
-     * entry is ignored. Secret authority must be package-scoped.
+     * Defense in depth: scoped host-read capabilities are
+     * ignored if a trusted caller mistakenly places them in
+     * the broad allow-list. Their authority must be package-scoped.
      */
     this.allowedCapabilities =
       new Set<PackageCapability>(
@@ -105,9 +126,24 @@ export class PackageCapabilityPolicy {
         ).filter(
           capability =>
             capability !==
-            "host.secrets.read"
+              "host.environment.read" &&
+            capability !==
+              "host.secrets.read"
         )
       );
+
+    this.packageEnvironmentGrants =
+      (policy.packageEnvironmentGrants ?? [])
+        .map(
+          grant => ({
+            publisherId:
+              grant.publisherId,
+            packageId:
+              grant.packageId,
+            variables:
+              [...grant.variables],
+          })
+        );
 
     this.packageSecretGrants =
       (policy.packageSecretGrants ?? [])
@@ -141,6 +177,25 @@ export class PackageCapabilityPolicy {
           capability,
           "is not supported by the package capability broker"
         );
+      }
+
+      if (
+        capability ===
+        "host.environment.read"
+      ) {
+        if (
+          !this.hasManifestEnvironmentGrant(
+            manifest
+          )
+        ) {
+          this.deny(
+            manifest.id,
+            capability,
+            "has no matching package-scoped environment grant in the active package execution policy"
+          );
+        }
+
+        continue;
       }
 
       if (
@@ -208,6 +263,25 @@ export class PackageCapabilityPolicy {
 
     if (
       capability ===
+      "host.environment.read"
+    ) {
+      if (
+        !this.hasManifestEnvironmentGrant(
+          manifest
+        )
+      ) {
+        this.deny(
+          manifest.id,
+          capability,
+          "has no matching package-scoped environment grant in the active package execution policy"
+        );
+      }
+
+      return;
+    }
+
+    if (
+      capability ===
       "host.secrets.read"
     ) {
       if (
@@ -234,6 +308,46 @@ export class PackageCapabilityPolicy {
         manifest.id,
         capability,
         "is denied by the active package execution policy"
+      );
+    }
+  }
+
+  assertEnvironmentAccess(
+    manifest:
+      CapabilityManifest,
+    variableName: string
+  ): void {
+    this.assertCapability(
+      manifest,
+      "host.environment.read"
+    );
+
+    const declared =
+      (manifest.hostEnvironment ?? [])
+        .some(
+          variable =>
+            variable.name ===
+            variableName
+        );
+
+    if (!declared) {
+      this.denyEnvironment(
+        manifest.id,
+        variableName,
+        "is not declared by the package manifest"
+      );
+    }
+
+    if (
+      !this.hasExactEnvironmentGrant(
+        manifest,
+        variableName
+      )
+    ) {
+      this.denyEnvironment(
+        manifest.id,
+        variableName,
+        "is denied by the active package-scoped environment policy"
       );
     }
   }
@@ -276,6 +390,53 @@ export class PackageCapabilityPolicy {
         "is denied by the active package-scoped secret policy"
       );
     }
+  }
+
+  private hasManifestEnvironmentGrant(
+    manifest:
+      CapabilityManifest
+  ): boolean {
+    const declaredVariables =
+      new Set(
+        (manifest.hostEnvironment ?? [])
+          .map(
+            variable =>
+              variable.name
+          )
+      );
+
+    return this.packageEnvironmentGrants
+      .some(
+        grant =>
+          grant.publisherId ===
+            manifest.publisher.id &&
+          grant.packageId ===
+            manifest.id &&
+          grant.variables.some(
+            variableName =>
+              declaredVariables.has(
+                variableName
+              )
+          )
+      );
+  }
+
+  private hasExactEnvironmentGrant(
+    manifest:
+      CapabilityManifest,
+    variableName: string
+  ): boolean {
+    return this.packageEnvironmentGrants
+      .some(
+        grant =>
+          grant.publisherId ===
+            manifest.publisher.id &&
+          grant.packageId ===
+            manifest.id &&
+          grant.variables.includes(
+            variableName
+          )
+      );
   }
 
   private hasManifestSecretGrant(
@@ -339,6 +500,23 @@ export class PackageCapabilityPolicy {
             .PACKAGE_PERMISSION_DENIED,
         suggestion:
           "Use a trusted package whose declared capabilities are supported and permitted by Aurora.",
+      }
+    );
+  }
+
+  private denyEnvironment(
+    packageId: string,
+    variableName: string,
+    reason: string
+  ): never {
+    throw new AuroraError(
+      `Package '${packageId}' host environment variable '${variableName}' ${reason}.`,
+      {
+        code:
+          ErrorCodes
+            .PACKAGE_PERMISSION_DENIED,
+        suggestion:
+          "Grant only the exact trusted publisher, package, and non-secret host environment variables required by the package.",
       }
     );
   }
