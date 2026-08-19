@@ -2853,6 +2853,266 @@ test(
 
 
 test(
+  "complete preflight prevents dependency mutation when a later environment check fails",
+  async () => {
+    const target =
+      receipt(
+        TARGET,
+        {
+          dependencies: [
+            {
+              name:
+                "owned-dependency",
+
+              version:
+                "2.0.0",
+
+              previousVersion:
+                "1.0.0",
+            },
+          ],
+
+          environment: [
+            {
+              name:
+                "OWNED_ENV",
+
+              introduced:
+                true,
+            },
+          ],
+        }
+      );
+
+    const fixture =
+      await createProject(
+        [
+          target,
+        ],
+        {
+          dependencies: {
+            "owned-dependency":
+              "2.0.0",
+          },
+
+          environment:
+            "OWNED_ENV=user-value\n",
+        }
+      );
+
+    try {
+      const {
+        uninstaller,
+      } =
+        ownership(
+          fixture
+        );
+
+      const plan =
+        uninstaller.createPlan(
+          target,
+          fixture.state
+        );
+
+      const packageJsonBefore =
+        await fs.readFile(
+          fixture.packageJsonFile,
+          "utf8"
+        );
+
+      const environmentBefore =
+        await fs.readFile(
+          fixture.environmentFile,
+          "utf8"
+        );
+
+      await assert.rejects(
+        () =>
+          uninstaller.apply(
+            plan
+          ),
+        /contains a value/u
+      );
+
+      assert.equal(
+        await fs.readFile(
+          fixture.packageJsonFile,
+          "utf8"
+        ),
+        packageJsonBefore
+      );
+
+      assert.equal(
+        await fs.readFile(
+          fixture.environmentFile,
+          "utf8"
+        ),
+        environmentBefore
+      );
+    }
+    finally {
+      await cleanup(
+        fixture
+      );
+    }
+  }
+);
+
+
+test(
+  "complete preflight prevents dependency and environment mutation when a later file check fails",
+  async () => {
+    const expectedFile =
+      "expected owned file\n";
+
+    const target =
+      receipt(
+        TARGET,
+        {
+          files: [
+            {
+              path:
+                "owned.txt",
+
+              action:
+                "created",
+
+              sha256:
+                sha256(
+                  expectedFile
+                ),
+
+              previousSha256:
+                null,
+            },
+          ],
+
+          dependencies: [
+            {
+              name:
+                "owned-dependency",
+
+              version:
+                "2.0.0",
+
+              previousVersion:
+                "1.0.0",
+            },
+          ],
+
+          environment: [
+            {
+              name:
+                "OWNED_ENV",
+
+              introduced:
+                true,
+            },
+          ],
+        }
+      );
+
+    const fixture =
+      await createProject(
+        [
+          target,
+        ],
+        {
+          files: {
+            "owned.txt":
+              expectedFile,
+          },
+
+          dependencies: {
+            "owned-dependency":
+              "2.0.0",
+          },
+
+          environment:
+            "OWNED_ENV=\n",
+        }
+      );
+
+    try {
+      const {
+        uninstaller,
+      } =
+        ownership(
+          fixture
+        );
+
+      const plan =
+        uninstaller.createPlan(
+          target,
+          fixture.state
+        );
+
+      await fs.writeFile(
+        path.join(
+          fixture.root,
+          "owned.txt"
+        ),
+        "drifted owned file\n",
+        "utf8"
+      );
+
+      const packageJsonBefore =
+        await fs.readFile(
+          fixture.packageJsonFile,
+          "utf8"
+        );
+
+      const environmentBefore =
+        await fs.readFile(
+          fixture.environmentFile,
+          "utf8"
+        );
+
+      await assert.rejects(
+        () =>
+          uninstaller.apply(
+            plan
+          ),
+        /digest no longer matches/u
+      );
+
+      assert.equal(
+        await fs.readFile(
+          fixture.packageJsonFile,
+          "utf8"
+        ),
+        packageJsonBefore
+      );
+
+      assert.equal(
+        await fs.readFile(
+          fixture.environmentFile,
+          "utf8"
+        ),
+        environmentBefore
+      );
+
+      assert.equal(
+        await fs.readFile(
+          path.join(
+            fixture.root,
+            "owned.txt"
+          ),
+          "utf8"
+        ),
+        "drifted owned file\n"
+      );
+    }
+    finally {
+      await cleanup(
+        fixture
+      );
+    }
+  }
+);
+
+
+test(
   "WriteLock remains a process-wide serialization primitive",
   async () => {
     const first =

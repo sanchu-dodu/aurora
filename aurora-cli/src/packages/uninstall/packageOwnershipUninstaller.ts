@@ -422,62 +422,91 @@ export class PackageOwnershipUninstaller {
       PackageOwnershipUninstallPlan
   ): Promise<void> {
     /*
-     * Preserved shared resources are deliberately part
-     * of the plan. They are revalidated during this
-     * locked execution instead of relying only on the
-     * earlier InstalledStateVerifier pass.
+     * Strict uninstall execution is split into two phases:
+     *
+     * 1. Preflight every dependency, environment marker,
+     *    and owned file without mutating project state.
+     *
+     * 2. Only after the complete preflight succeeds may
+     *    any project mutation begin.
+     *
+     * Each mutable resource is then revalidated immediately
+     * before its individual mutation. This preserves the
+     * existing TOCTOU protections while also guaranteeing
+     * that a later resource validation failure cannot occur
+     * after an earlier project write.
      */
+    const dependencies =
+      await this
+        .preflightDependencies(
+          plan
+        );
+
+    const environment =
+      await this
+        .preflightEnvironment(
+          plan
+        );
+
     await this
-      .applyDependencies(
+      .preflightFiles(
         plan
       );
 
     await this
-      .applyEnvironment(
-        plan
+      .applyPreparedDependencies(
+        plan,
+        dependencies
       );
 
     await this
-      .applyFiles(
+      .applyPreparedEnvironment(
+        plan,
+        environment
+      );
+
+    await this
+      .applyPreparedFiles(
         plan
       );
   }
 
-  private async applyDependencies(
+  private async preflightDependencies(
     plan:
       PackageOwnershipUninstallPlan
-  ): Promise<void> {
-    if (
-      plan.dependencies.length ===
-      0
-    ) {
-      return;
-    }
-
+  ): Promise<{
+    readonly path: string;
+    readonly mutates: boolean;
+    readonly sourceContent: string;
+    readonly nextContent: string;
+  }> {
     const packageJsonPath =
       this.pathBoundary.resolve(
         "package.json"
       );
 
-    const mutates =
-      plan.dependencies.some(
-        action =>
-          action.replacementVersion !==
-          undefined
-      );
+    if (
+      plan.dependencies.length ===
+      0
+    ) {
+      return {
+        path:
+          packageJsonPath,
 
-    if (mutates) {
-      await this.transaction
-        .recordModifiedFile(
-          packageJsonPath
-        );
+        mutates:
+          false,
+
+        sourceContent:
+          "",
+
+        nextContent:
+          "",
+      };
     }
 
     const content =
       await fs.readFile(
-        this.pathBoundary.resolve(
-          "package.json"
-        ),
+        packageJsonPath,
         "utf8"
       );
 
@@ -508,6 +537,13 @@ export class PackageOwnershipUninstaller {
       );
     }
 
+    const mutates =
+      plan.dependencies.some(
+        action =>
+          action.replacementVersion !==
+          undefined
+      );
+
     for (
       const action
       of plan.dependencies
@@ -518,8 +554,8 @@ export class PackageOwnershipUninstaller {
         ];
 
       /*
-       * This validation is performed for both mutated
-       * and preserved shared dependencies.
+       * Validate both mutated and preserved shared
+       * dependencies during the global preflight.
        */
       if (
         current !==
@@ -553,58 +589,144 @@ export class PackageOwnershipUninstaller {
       }
     }
 
-    if (!mutates) {
+    return {
+      path:
+        packageJsonPath,
+
+      mutates,
+
+      sourceContent:
+        content,
+
+      nextContent:
+        mutates
+          ? JSON.stringify(
+              packageJson,
+              null,
+              2
+            )
+          : content,
+    };
+  }
+
+  private async applyPreparedDependencies(
+    plan:
+      PackageOwnershipUninstallPlan,
+    prepared: {
+      readonly path: string;
+      readonly mutates: boolean;
+      readonly sourceContent: string;
+      readonly nextContent: string;
+    }
+  ): Promise<void> {
+    if (!prepared.mutates) {
       return;
     }
 
+    /*
+     * Revalidate immediately before recording and writing.
+     * Exact source-byte equality also prevents unrelated
+     * package.json edits between global preflight and commit.
+     */
+    const revalidated =
+      await this
+        .preflightDependencies(
+          plan
+        );
+
+    if (
+      !revalidated.mutates ||
+      revalidated.sourceContent !==
+        prepared.sourceContent ||
+      revalidated.nextContent !==
+        prepared.nextContent
+    ) {
+      throw new Error(
+        "Cannot safely uninstall package dependencies because package.json changed after uninstall preflight."
+      );
+    }
+
+    await this.transaction
+      .recordModifiedFile(
+        prepared.path
+      );
+
+    /*
+     * FileTransaction recording itself performs a read.
+     * Revalidate once more after that read and immediately
+     * before the actual project write.
+     */
+    const finalValidation =
+      await this
+        .preflightDependencies(
+          plan
+        );
+
+    if (
+      !finalValidation.mutates ||
+      finalValidation.sourceContent !==
+        prepared.sourceContent ||
+      finalValidation.nextContent !==
+        prepared.nextContent
+    ) {
+      throw new Error(
+        "Cannot safely uninstall package dependencies because package.json changed immediately before mutation."
+      );
+    }
+
     await fs.writeFile(
-      this.pathBoundary.resolve(
-        "package.json"
-      ),
-      JSON.stringify(
-        packageJson,
-        null,
-        2
-      ),
+      prepared.path,
+      prepared.nextContent,
       "utf8"
     );
   }
 
-  private async applyEnvironment(
+  private async preflightEnvironment(
     plan:
       PackageOwnershipUninstallPlan
-  ): Promise<void> {
-    if (
-      plan.environment.length ===
-      0
-    ) {
-      return;
-    }
-
+  ): Promise<{
+    readonly path: string;
+    readonly mutates: boolean;
+    readonly sourceContent: string;
+    readonly nextContent: string;
+  }> {
     const environmentPath =
       this.pathBoundary.resolve(
         ".env.example"
       );
 
+    if (
+      plan.environment.length ===
+      0
+    ) {
+      return {
+        path:
+          environmentPath,
+
+        mutates:
+          false,
+
+        sourceContent:
+          "",
+
+        nextContent:
+          "",
+      };
+    }
+
+    const sourceContent =
+      await fs.readFile(
+        environmentPath,
+        "utf8"
+      );
+
+    let nextContent =
+      sourceContent;
+
     const mutates =
       plan.environment.some(
         action =>
           action.remove
-      );
-
-    if (mutates) {
-      await this.transaction
-        .recordModifiedFile(
-          environmentPath
-        );
-    }
-
-    let content =
-      await fs.readFile(
-        this.pathBoundary.resolve(
-          ".env.example"
-        ),
-        "utf8"
       );
 
     for (
@@ -613,15 +735,13 @@ export class PackageOwnershipUninstaller {
     ) {
       const markers =
         countVariableMarkers(
-          content,
+          nextContent,
           action.name
         );
 
       /*
-       * Duplicate markers are ambiguous. Even when the
-       * resource is being preserved, do not silently
-       * remove ownership from an ambiguous environment
-       * state.
+       * Duplicate or missing markers are ambiguous even
+       * when a shared resource will be preserved.
        */
       if (
         markers !==
@@ -640,7 +760,7 @@ export class PackageOwnershipUninstaller {
 
       const emptyMarkers =
         countExactEmptyMarkers(
-          content,
+          nextContent,
           action.name
         );
 
@@ -653,27 +773,88 @@ export class PackageOwnershipUninstaller {
         );
       }
 
-      content =
+      nextContent =
         removeExactEmptyMarker(
-          content,
+          nextContent,
           action.name
         );
     }
 
-    if (!mutates) {
+    return {
+      path:
+        environmentPath,
+
+      mutates,
+
+      sourceContent,
+
+      nextContent,
+    };
+  }
+
+  private async applyPreparedEnvironment(
+    plan:
+      PackageOwnershipUninstallPlan,
+    prepared: {
+      readonly path: string;
+      readonly mutates: boolean;
+      readonly sourceContent: string;
+      readonly nextContent: string;
+    }
+  ): Promise<void> {
+    if (!prepared.mutates) {
       return;
     }
 
+    const revalidated =
+      await this
+        .preflightEnvironment(
+          plan
+        );
+
+    if (
+      !revalidated.mutates ||
+      revalidated.sourceContent !==
+        prepared.sourceContent ||
+      revalidated.nextContent !==
+        prepared.nextContent
+    ) {
+      throw new Error(
+        "Cannot safely uninstall package environment because .env.example changed after uninstall preflight."
+      );
+    }
+
+    await this.transaction
+      .recordModifiedFile(
+        prepared.path
+      );
+
+    const finalValidation =
+      await this
+        .preflightEnvironment(
+          plan
+        );
+
+    if (
+      !finalValidation.mutates ||
+      finalValidation.sourceContent !==
+        prepared.sourceContent ||
+      finalValidation.nextContent !==
+        prepared.nextContent
+    ) {
+      throw new Error(
+        "Cannot safely uninstall package environment because .env.example changed immediately before mutation."
+      );
+    }
+
     await fs.writeFile(
-      this.pathBoundary.resolve(
-        ".env.example"
-      ),
-      content,
+      prepared.path,
+      prepared.nextContent,
       "utf8"
     );
   }
 
-  private async applyFiles(
+  private async preflightFiles(
     plan:
       PackageOwnershipUninstallPlan
   ): Promise<void> {
@@ -681,38 +862,82 @@ export class PackageOwnershipUninstaller {
       const action
       of plan.files
     ) {
-      const fullPath =
-        this.pathBoundary.resolve(
+      await this
+        .preflightFile(
+          action
+        );
+    }
+  }
+
+  private async preflightFile(
+    action:
+      PackageOwnershipUninstallPlan[
+        "files"
+      ][number]
+  ): Promise<void> {
+    /*
+     * Revalidate every target-owned file, including a
+     * shared file that will remain in place.
+     */
+    const digest =
+      await this
+        .readStableDigest(
           action.path
         );
 
-      if (
-        action.remove
-      ) {
-        await this.transaction
-          .recordModifiedFile(
-            fullPath
-          );
-      }
+    if (
+      digest !==
+      action.sha256
+    ) {
+      throw new Error(
+        `Cannot safely process owned file '${action.path}' because its current digest no longer matches the ownership receipt.`
+      );
+    }
 
+    if (
+      !action.remove
+    ) {
+      return;
+    }
+
+    const fullPath =
+      this.pathBoundary.resolve(
+        action.path
+      );
+
+    const information =
+      await fs.lstat(
+        fullPath
+      );
+
+    if (
+      information
+        .isSymbolicLink() ||
+      !information
+        .isFile()
+    ) {
+      throw new Error(
+        `Cannot safely remove owned file '${action.path}' because it is no longer a regular file.`
+      );
+    }
+  }
+
+  private async applyPreparedFiles(
+    plan:
+      PackageOwnershipUninstallPlan
+  ): Promise<void> {
+    for (
+      const action
+      of plan.files
+    ) {
       /*
-       * Revalidate every target-owned file, including a
-       * shared file that will remain in place.
+       * Immediate execution-time revalidation is retained
+       * for both removed and preserved shared files.
        */
-      const digest =
-        await this
-          .readStableDigest(
-            action.path
-          );
-
-      if (
-        digest !==
-        action.sha256
-      ) {
-        throw new Error(
-          `Cannot safely process owned file '${action.path}' because its current digest no longer matches the ownership receipt.`
+      await this
+        .preflightFile(
+          action
         );
-      }
 
       if (
         !action.remove
@@ -720,29 +945,29 @@ export class PackageOwnershipUninstaller {
         continue;
       }
 
-      /*
-       * Re-resolve immediately before mutation.
-       */
-      const removalPath =
+      const fullPath =
         this.pathBoundary.resolve(
           action.path
         );
 
-      const information =
-        await fs.lstat(
-          removalPath
+      await this.transaction
+        .recordModifiedFile(
+          fullPath
         );
 
-      if (
-        information
-          .isSymbolicLink() ||
-        !information
-          .isFile()
-      ) {
-        throw new Error(
-          `Cannot safely remove owned file '${action.path}' because it is no longer a regular file.`
+      /*
+       * Revalidate again after the transaction snapshot and
+       * immediately before unlinking the project resource.
+       */
+      await this
+        .preflightFile(
+          action
         );
-      }
+
+      const removalPath =
+        this.pathBoundary.resolve(
+          action.path
+        );
 
       await fs.unlink(
         removalPath
