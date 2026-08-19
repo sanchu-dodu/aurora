@@ -405,7 +405,7 @@ test(
       {
         ...signed,
         capabilities: [
-          "network.access",
+          "project.files.write",
         ],
       },
       {

@@ -25,6 +25,10 @@ import {
   PackageExecutionHost,
 } from "../execution/packageExecutionHost.js";
 
+import type {
+  PackageNetworkBroker,
+} from "../execution/packageNetworkBroker.js";
+
 import {
   PackageEnvironmentBroker,
   type PackageEnvironmentValueProvider,
@@ -94,7 +98,9 @@ export class PackageWorker {
           new OsCredentialStore()
         ),
     environmentProvider?:
-      PackageEnvironmentValueProvider
+      PackageEnvironmentValueProvider,
+    private readonly networkBroker?:
+      PackageNetworkBroker
   ) {
     this.capabilityPolicy =
       new PackageCapabilityPolicy(
@@ -194,7 +200,8 @@ export class PackageWorker {
         this.capabilityPolicy,
         this.secretReader,
         this.environmentReader,
-        projectFileReader
+        projectFileReader,
+        this.networkBroker
       );
 
     console.log(

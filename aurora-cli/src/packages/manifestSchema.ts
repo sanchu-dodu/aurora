@@ -1,4 +1,8 @@
 import {
+  isIP,
+} from "node:net";
+
+import {
   z,
 } from "zod";
 
@@ -36,6 +40,18 @@ const IDENTIFIER_PATTERN =
 
 const ENVIRONMENT_NAME_PATTERN =
   /^[A-Z][A-Z0-9_]*$/;
+
+export const PACKAGE_NETWORK_METHODS = [
+  "GET",
+  "HEAD",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+] as const;
+
+const NETWORK_HOSTNAME_PATTERN =
+  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 const SHA256_PATTERN =
   /^[a-f0-9]{64}$/;
@@ -97,6 +113,59 @@ const HttpsUrlSchema =
       }
     },
     "Expected an HTTPS URL."
+  );
+
+export function isCanonicalPackageNetworkOrigin(
+  value: string
+): boolean {
+  let endpoint: URL;
+
+  try {
+    endpoint =
+      new URL(value);
+  }
+  catch {
+    return false;
+  }
+
+  if (
+    endpoint.protocol !== "https:" ||
+    endpoint.username ||
+    endpoint.password ||
+    endpoint.pathname !== "/" ||
+    endpoint.search ||
+    endpoint.hash
+  ) {
+    return false;
+  }
+
+  const hostname =
+    endpoint.hostname;
+
+  const ipCandidate =
+    hostname.startsWith("[") &&
+    hostname.endsWith("]")
+      ? hostname.slice(1, -1)
+      : hostname;
+
+  if (
+    isIP(ipCandidate) !== 0 ||
+    hostname.endsWith(".") ||
+    !NETWORK_HOSTNAME_PATTERN.test(
+      hostname
+    )
+  ) {
+    return false;
+  }
+
+  return value ===
+    endpoint.origin;
+}
+
+const PackageNetworkOriginSchema =
+  z.string().refine(
+    isCanonicalPackageNetworkOrigin,
+    "Network origins must be canonical HTTPS origins without credentials, paths, queries, fragments, IP literals, default-port spelling, or trailing slash."
   );
 
 const PackageSignatureSchema =
@@ -186,6 +255,40 @@ const PackageProjectFileReadSchema =
     required:
       z.boolean(),
   }).strict();
+
+const PackageNetworkAccessSchema =
+  z.object({
+    origin:
+      PackageNetworkOriginSchema,
+    methods:
+      z.array(
+        z.enum(
+          PACKAGE_NETWORK_METHODS
+        )
+      )
+        .min(1)
+        .max(
+          PACKAGE_NETWORK_METHODS.length
+        ),
+  })
+    .strict()
+    .superRefine(
+      (declaration, context) => {
+        if (
+          new Set(
+            declaration.methods
+          ).size !==
+          declaration.methods.length
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["methods"],
+            message:
+              "Network access methods cannot contain duplicate values.",
+          });
+        }
+      }
+    );
 
 const PlatformSchema =
   z.object({
@@ -335,6 +438,12 @@ export const ManifestSchema =
       )
         .max(50)
         .optional(),
+    networkAccess:
+      z.array(
+        PackageNetworkAccessSchema
+      )
+        .max(25)
+        .optional(),
     platforms: PlatformSchema,
     lifecycle: LifecycleSchema,
     links: z.object({
@@ -429,6 +538,15 @@ export const ManifestSchema =
             ).map(
               (file) =>
                 file.path
+            ),
+          ],
+          [
+            "networkAccess",
+            (
+              manifest.networkAccess ?? []
+            ).map(
+              (declaration) =>
+                declaration.origin
             ),
           ],
           [
@@ -760,6 +878,37 @@ export const ManifestSchema =
             path: ["projectFileReads"],
             message:
               "The project.files.read capability requires at least one explicitly declared project file.",
+          });
+        }
+
+        const declaredNetworkAccess =
+          manifest.networkAccess ?? [];
+
+        if (
+          declaredNetworkAccess.length > 0 &&
+          !capabilitySet.has(
+            "network.access"
+          )
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["capabilities"],
+            message:
+              "Package network-access declarations require the network.access capability.",
+          });
+        }
+
+        if (
+          capabilitySet.has(
+            "network.access"
+          ) &&
+          declaredNetworkAccess.length === 0
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["networkAccess"],
+            message:
+              "The network.access capability requires at least one explicitly declared network origin.",
           });
         }
 

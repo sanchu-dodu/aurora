@@ -17,6 +17,10 @@ import type {
 } from "./packageCapabilityPolicy.js";
 
 import type {
+  PackageNetworkResponse,
+} from "./packageNetworkBroker.js";
+
+import type {
   PackageExecutableModule,
   PackageExecutionLifecycle,
   PackageExecutionResponse,
@@ -294,6 +298,31 @@ const context:
 
           return value;
         },
+      },
+    },
+
+    network: {
+      async request(
+        input
+      ) {
+        const value =
+          await request(
+            "network.access",
+            "request",
+            input
+          );
+
+        if (
+          !isPackageNetworkResponse(
+            value
+          )
+        ) {
+          throw new Error(
+            "Package network broker returned an invalid response."
+          );
+        }
+
+        return value;
       },
     },
 
@@ -650,6 +679,70 @@ function installGlobalPolicy():
       );
     }
   }
+}
+
+function isPackageNetworkResponse(
+  value: unknown
+): value is
+  PackageNetworkResponse {
+  if (
+    typeof value !==
+      "object" ||
+    value === null
+  ) {
+    return false;
+  }
+
+  const candidate =
+    value as
+      Partial<
+        PackageNetworkResponse
+      >;
+
+  if (
+    typeof candidate.status !==
+      "number" ||
+    !Number.isInteger(
+      candidate.status
+    ) ||
+    candidate.status < 100 ||
+    candidate.status > 599 ||
+    typeof candidate.body !==
+      "string" ||
+    !Array.isArray(
+      candidate.headers
+    )
+  ) {
+    return false;
+  }
+
+  return candidate.headers.every(
+    header => {
+      if (
+        typeof header !==
+          "object" ||
+        header === null
+      ) {
+        return false;
+      }
+
+      const candidateHeader =
+        header as {
+          readonly name?: unknown;
+          readonly value?: unknown;
+        };
+
+      return (
+        Object.keys(
+          header
+        ).length === 2 &&
+        typeof candidateHeader.name ===
+          "string" &&
+        typeof candidateHeader.value ===
+          "string"
+      );
+    }
+  );
 }
 
 function isExecutionResponse(

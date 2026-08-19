@@ -2,6 +2,11 @@ import type {
   PackageCapability,
 } from "./packageCapabilityPolicy.js";
 
+import type {
+  PackageNetworkRequest,
+  PackageNetworkResponse,
+} from "./packageNetworkBroker.js";
+
 export type PackageExecutionLifecycle =
   | "beforeInstall"
   | "install"
@@ -86,6 +91,12 @@ export interface PackageWorkerContext {
         name: string
       ): Promise<string | null>;
     };
+  };
+
+  readonly network: {
+    request(
+      input: PackageNetworkRequest
+    ): Promise<PackageNetworkResponse>;
   };
 
   readonly env: {
