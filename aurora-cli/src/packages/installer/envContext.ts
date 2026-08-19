@@ -1,53 +1,70 @@
 import fs from "fs/promises";
+
 import { TransactionManager } from "./transactionManager.js";
 
 import {
   ProjectPathBoundary,
 } from "../../security/projectPathBoundary.js";
 
-export class EnvContext {
+import type {
+  PackageOwnershipRecorder,
+} from "../state/packageOwnershipRecorder.js";
 
+export class EnvContext {
   constructor(
-    private pathBoundary: ProjectPathBoundary,
-    private transaction: TransactionManager
+    private pathBoundary:
+      ProjectPathBoundary,
+    private transaction:
+      TransactionManager,
+    private ownershipRecorder?:
+      PackageOwnershipRecorder
   ) {}
 
   async addVariables(
     variables: string[]
   ): Promise<void> {
-
     const file =
       this.pathBoundary.resolve(
         ".env.example"
       );
 
-    await this.transaction.recordModifiedFile(
-      file
-    );
+    await this.transaction
+      .recordModifiedFile(
+        file
+      );
 
     let content = "";
 
     try {
-
-      content = await fs.readFile(
-        file,
-        "utf8"
-      );
-
-    } catch {
-
+      content =
+        await fs.readFile(
+          file,
+          "utf8"
+        );
+    }
+    catch {
       content = "";
-
     }
 
-    for (const variable of variables) {
+    for (
+      const variable
+      of variables
+    ) {
+      const introduced =
+        !content.includes(
+          `${variable}=`
+        );
 
-      if (!content.includes(`${variable}=`)) {
-
-        content += `${variable}=\n`;
-
+      if (introduced) {
+        content +=
+          `${variable}=\n`;
       }
 
+      this.ownershipRecorder
+        ?.recordEnvironment(
+          variable,
+          introduced
+        );
     }
 
     await fs.writeFile(
@@ -60,7 +77,5 @@ export class EnvContext {
     console.log(
       "Updated .env.example"
     );
-
   }
-
 }

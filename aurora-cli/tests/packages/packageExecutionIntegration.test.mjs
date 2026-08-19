@@ -318,7 +318,7 @@ export async function install(context) {
 );
 
 test(
-  "PackageWorker rejects unsupported capabilities before host-side template mutation",
+  "PackageWorker rejects ungranted network capability before host-side template mutation",
   async () => {
     const projectRoot =
       await createProject();
@@ -367,6 +367,15 @@ test(
         capabilities: [
           "project.files.write",
           "network.access",
+        ],
+        networkAccess: [
+          {
+            origin:
+              "https://api.example.com",
+            methods: [
+              "GET",
+            ],
+          },
         ],
       }
     );

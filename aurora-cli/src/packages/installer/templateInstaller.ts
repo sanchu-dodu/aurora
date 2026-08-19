@@ -33,7 +33,10 @@ export async function installTemplates(
         file.role === "template"
     );
 
-  for (const template of templates) {
+  for (
+    const template
+    of templates
+  ) {
     const source =
       packageBoundary.resolve(
         `${manifest.id}/${template.path}`
@@ -41,17 +44,19 @@ export async function installTemplates(
 
     const relativeTemplatePath =
       template.path
-        .slice("templates/".length)
-        .replace(/\.template$/, "");
+        .slice(
+          "templates/".length
+        )
+        .replace(
+          /\.template$/,
+          ""
+        );
 
-    const targetPath = path.join(
-      "src",
-      ...relativeTemplatePath.split("/")
-    );
-
-    const target =
-      context.resolveProjectPath(
-        targetPath
+    const targetPath =
+      path.join(
+        "src",
+        ...relativeTemplatePath
+          .split("/")
       );
 
     const content =
@@ -60,22 +65,9 @@ export async function installTemplates(
         "utf8"
       );
 
-    await context.transaction
-      .recordModifiedFile(target);
-
-    await fs.mkdir(
-      path.dirname(target),
-      {
-        recursive: true,
-      }
-    );
-
-    await fs.writeFile(
-      context.resolveProjectPath(
-        targetPath
-      ),
-      content,
-      "utf8"
+    await context.createFile(
+      targetPath,
+      content
     );
 
     console.log(

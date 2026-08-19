@@ -37,6 +37,12 @@ import {
 } from "./packageCapabilityPolicy.js";
 
 import {
+  PackageNetworkBroker,
+  type PackageNetworkRequest,
+  type PackageNetworkSession,
+} from "./packageNetworkBroker.js";
+
+import {
   PACKAGE_ENVIRONMENT_VALUE_MAX_BYTES,
   type PackageEnvironmentReader,
 } from "./packageEnvironmentBroker.js";
@@ -101,7 +107,12 @@ export class PackageExecutionHost {
     private readonly environmentReader?:
       PackageEnvironmentReader,
     private readonly projectFileReader?:
-      PackageProjectFileReader
+      PackageProjectFileReader,
+    private readonly networkBroker =
+      new PackageNetworkBroker({
+        accessPolicy:
+          policy,
+      })
   ) {}
 
   async run(
@@ -240,6 +251,12 @@ export class PackageExecutionHost {
         const projectFileBudget = {
           releasedBytes: 0,
         };
+
+        const networkSession =
+          this.networkBroker
+            .createSession(
+              manifest
+            );
 
         let outputBytes = 0;
 
@@ -422,7 +439,8 @@ export class PackageExecutionHost {
                 context,
                 releasedSecrets,
                 environmentBudget,
-                projectFileBudget
+                projectFileBudget,
+                networkSession
               ).then(
                 value => {
                   sendResponse(
@@ -708,7 +726,9 @@ export class PackageExecutionHost {
     },
     projectFileBudget: {
       releasedBytes: number;
-    }
+    },
+    networkSession:
+      PackageNetworkSession
   ): Promise<unknown> {
     this.policy.assertCapability(
       manifest,
@@ -1121,6 +1141,19 @@ export class PackageExecutionHost {
             "Do not write raw package secret values through privileged host requests.",
         }
       );
+    }
+
+    if (
+      request.capability ===
+        "network.access" &&
+      request.action ===
+        "request"
+    ) {
+      return await networkSession
+        .request(
+          request.input as
+            PackageNetworkRequest
+        );
     }
 
     if (

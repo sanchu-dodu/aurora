@@ -63,6 +63,7 @@ test(
       [
         "host.environment.read",
         "host.secrets.read",
+        "network.access",
         "package.code.execute",
         "project.files.read",
         "project.files.write",
@@ -417,7 +418,7 @@ test(
       () =>
         policy.assertManifest(
           manifest([
-            "network.access",
+            "process.execute",
           ])
         ),
       error => {
@@ -428,7 +429,7 @@ test(
 
         assert.match(
           error.message,
-          /network\.access/
+          /process\.execute/
         );
 
         assert.match(
@@ -1150,40 +1151,558 @@ test(
   }
 );
 
-test(
-  "network and process capabilities remain unsupported with project file reads",
-  () => {
-    for (const capability of [
-      "network.access",
-      "process.execute",
-    ]) {
-      const policy =
-        new PackageCapabilityPolicy({
-          allowedCapabilities: [
-            capability,
-          ],
-          packageProjectFileGrants: [
-            projectFileGrant(),
-          ],
-        });
+function networkManifest(
+  {
+    id = "test-package",
+    publisherId = "aurora-tests",
+    capabilities = ["network.access"],
+    networkAccess = [
+      {
+        origin: "https://api.example.com",
+        methods: ["GET"],
+      },
+    ],
+  } = {}
+) {
+  return {
+    ...manifest(
+      capabilities,
+      { id, publisherId }
+    ),
+    networkAccess,
+  };
+}
 
-      assert.throws(
-        () =>
-          policy.assertManifest(
-            manifest([capability])
-          ),
-        error => {
-          assert.equal(
-            error.code,
-            "PACKAGE_PERMISSION_DENIED"
-          );
-          assert.match(
-            error.message,
-            /not supported/
-          );
-          return true;
-        }
-      );
-    }
+function networkGrant(
+  {
+    publisherId = "aurora-tests",
+    packageId = "test-package",
+    origin = "https://api.example.com",
+    methods = ["GET"],
+  } = {}
+) {
+  return {
+    publisherId,
+    packageId,
+    origin,
+    methods,
+  };
+}
+
+test(
+  "default package policy excludes network access",
+  () => {
+    assert.equal(
+      DEFAULT_PACKAGE_ALLOWED_CAPABILITIES.includes(
+        "network.access"
+      ),
+      false
+    );
+  }
+);
+
+test(
+  "matching exact network grant admits manifest capability and request",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageNetworkGrants: [
+          networkGrant(),
+        ],
+      });
+
+    const candidate =
+      networkManifest();
+
+    assert.doesNotThrow(
+      () => policy.assertManifest(candidate)
+    );
+
+    assert.doesNotThrow(
+      () => policy.assertCapability(
+        candidate,
+        "network.access"
+      )
+    );
+
+    assert.doesNotThrow(
+      () => policy.assertNetworkAccess(
+        candidate,
+        "https://api.example.com",
+        "GET"
+      )
+    );
+  }
+);
+
+test(
+  "generic allowedCapabilities cannot grant network access",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        allowedCapabilities: [
+          "network.access",
+        ],
+      });
+
+    assert.throws(
+      () => policy.assertManifest(
+        networkManifest()
+      ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        assert.match(
+          error.message,
+          /package-scoped network grant/
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "network manifest without a package-scoped grant fails closed",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy();
+
+    assert.throws(
+      () => policy.assertManifest(
+        networkManifest()
+      ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        assert.match(
+          error.message,
+          /package-scoped network grant/
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "network grants match publisher identity exactly",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageNetworkGrants: [
+          networkGrant({
+            publisherId: "other-publisher",
+          }),
+        ],
+      });
+
+    assert.throws(
+      () => policy.assertManifest(
+        networkManifest()
+      ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "network grants match package identity exactly",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageNetworkGrants: [
+          networkGrant({
+            packageId: "dependency-package",
+          }),
+        ],
+      });
+
+    assert.throws(
+      () => policy.assertManifest(
+        networkManifest()
+      ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "network grants match canonical origin exactly",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageNetworkGrants: [
+          networkGrant({
+            origin: "https://other.example.com",
+          }),
+        ],
+      });
+
+    assert.throws(
+      () => policy.assertManifest(
+        networkManifest()
+      ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "network manifest admission requires method overlap",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageNetworkGrants: [
+          networkGrant({
+            methods: ["POST"],
+          }),
+        ],
+      });
+
+    assert.throws(
+      () => policy.assertManifest(
+        networkManifest()
+      ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        assert.match(
+          error.message,
+          /package-scoped network grant/
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "undeclared network origin fails even when separately host-granted",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageNetworkGrants: [
+          networkGrant(),
+          networkGrant({
+            origin: "https://other.example.com",
+          }),
+        ],
+      });
+
+    const candidate =
+      networkManifest();
+
+    assert.doesNotThrow(
+      () => policy.assertManifest(candidate)
+    );
+
+    assert.throws(
+      () => policy.assertNetworkAccess(
+        candidate,
+        "https://other.example.com",
+        "GET"
+      ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        assert.match(
+          error.message,
+          /not declared/
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "undeclared network method fails even when host-granted",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageNetworkGrants: [
+          networkGrant({
+            methods: ["GET", "POST"],
+          }),
+        ],
+      });
+
+    const candidate =
+      networkManifest();
+
+    assert.throws(
+      () => policy.assertNetworkAccess(
+        candidate,
+        "https://api.example.com",
+        "POST"
+      ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        assert.match(
+          error.message,
+          /method is not declared/
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "partial network grant authorizes only exact declared method",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageNetworkGrants: [
+          networkGrant({
+            methods: ["GET"],
+          }),
+        ],
+      });
+
+    const candidate =
+      networkManifest({
+        networkAccess: [
+          {
+            origin: "https://api.example.com",
+            methods: ["GET", "POST"],
+          },
+        ],
+      });
+
+    assert.doesNotThrow(
+      () => policy.assertManifest(candidate)
+    );
+
+    assert.doesNotThrow(
+      () => policy.assertNetworkAccess(
+        candidate,
+        "https://api.example.com",
+        "GET"
+      )
+    );
+
+    assert.throws(
+      () => policy.assertNetworkAccess(
+        candidate,
+        "https://api.example.com",
+        "POST"
+      ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        assert.match(
+          error.message,
+          /network policy/
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "root package network grant does not propagate to dependency package",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageNetworkGrants: [
+          networkGrant({
+            packageId: "root-package",
+          }),
+        ],
+      });
+
+    assert.doesNotThrow(
+      () => policy.assertManifest(
+        networkManifest({
+          id: "root-package",
+        })
+      )
+    );
+
+    assert.throws(
+      () => policy.assertManifest(
+        networkManifest({
+          id: "dependency-package",
+        })
+      ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "separate network origins remain independent",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        packageNetworkGrants: [
+          networkGrant(),
+        ],
+      });
+
+    const candidate =
+      networkManifest({
+        networkAccess: [
+          {
+            origin: "https://api.example.com",
+            methods: ["GET"],
+          },
+          {
+            origin: "https://api.example.com:8443",
+            methods: ["GET"],
+          },
+        ],
+      });
+
+    assert.doesNotThrow(
+      () => policy.assertManifest(candidate)
+    );
+
+    assert.doesNotThrow(
+      () => policy.assertNetworkAccess(
+        candidate,
+        "https://api.example.com",
+        "GET"
+      )
+    );
+
+    assert.throws(
+      () => policy.assertNetworkAccess(
+        candidate,
+        "https://api.example.com:8443",
+        "GET"
+      ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "network policy defensively copies caller-owned method grants",
+  () => {
+    const methods = ["GET"];
+
+    const policy =
+      new PackageCapabilityPolicy({
+        packageNetworkGrants: [
+          networkGrant({ methods }),
+        ],
+      });
+
+    methods.push("POST");
+
+    const candidate =
+      networkManifest({
+        networkAccess: [
+          {
+            origin: "https://api.example.com",
+            methods: ["GET", "POST"],
+          },
+        ],
+      });
+
+    assert.doesNotThrow(
+      () => policy.assertNetworkAccess(
+        candidate,
+        "https://api.example.com",
+        "GET"
+      )
+    );
+
+    assert.throws(
+      () => policy.assertNetworkAccess(
+        candidate,
+        "https://api.example.com",
+        "POST"
+      ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        return true;
+      }
+    );
+  }
+);
+
+test(
+  "process capability remains unsupported with project file reads",
+  () => {
+    const policy =
+      new PackageCapabilityPolicy({
+        allowedCapabilities: [
+          "process.execute",
+        ],
+        packageProjectFileGrants: [
+          projectFileGrant(),
+        ],
+      });
+
+    assert.throws(
+      () =>
+        policy.assertManifest(
+          manifest([
+            "process.execute",
+          ])
+        ),
+      error => {
+        assert.equal(
+          error.code,
+          "PACKAGE_PERMISSION_DENIED"
+        );
+        assert.match(
+          error.message,
+          /not supported/
+        );
+        return true;
+      }
+    );
   }
 );

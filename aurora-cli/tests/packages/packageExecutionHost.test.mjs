@@ -350,7 +350,7 @@ export async function install(context) {
 );
 
 test(
-  "package execution policy rejects unsupported network capability before execution",
+  "package execution policy rejects ungranted network capability before execution",
   async () => {
     const projectRoot =
       await createProject();

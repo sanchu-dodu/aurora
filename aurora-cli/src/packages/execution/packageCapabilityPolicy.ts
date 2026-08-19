@@ -13,6 +13,11 @@ import type {
 export type PackageCapability =
   PackageManifest["capabilities"][number];
 
+export type PackageNetworkMethod =
+  NonNullable<
+    PackageManifest["networkAccess"]
+  >[number]["methods"][number];
+
 /*
  * BROKERED means that Aurora recognizes the capability as one
  * that may be implemented through a trusted host-side broker.
@@ -22,6 +27,7 @@ export type PackageCapability =
 export const BROKERED_PACKAGE_CAPABILITIES = [
   "host.environment.read",
   "host.secrets.read",
+  "network.access",
   "package.code.execute",
   "project.files.read",
   "project.files.write",
@@ -72,6 +78,14 @@ export interface PackageSecretGrant {
     readonly string[];
 }
 
+export interface PackageNetworkGrant {
+  readonly publisherId: string;
+  readonly packageId: string;
+  readonly origin: string;
+  readonly methods:
+    readonly PackageNetworkMethod[];
+}
+
 export interface PackageExecutionPolicy {
   readonly allowedCapabilities?:
     readonly PackageCapability[];
@@ -101,6 +115,15 @@ export interface PackageExecutionPolicy {
    */
   readonly packageSecretGrants?:
     readonly PackageSecretGrant[];
+
+  /*
+   * High-trust host admission for package network egress.
+   * Matching is exact across authenticated publisher id,
+   * package id, canonical manifest origin, and HTTP method.
+   * Generic allowedCapabilities entries cannot grant it.
+   */
+  readonly packageNetworkGrants?:
+    readonly PackageNetworkGrant[];
 }
 
 type CapabilityManifest =
@@ -113,6 +136,7 @@ type CapabilityManifest =
       | "projectFileReads"
       | "hostEnvironment"
       | "secrets"
+      | "networkAccess"
     >
   >;
 
@@ -128,6 +152,9 @@ export class PackageCapabilityPolicy {
 
   private readonly packageSecretGrants:
     readonly PackageSecretGrant[];
+
+  private readonly packageNetworkGrants:
+    readonly PackageNetworkGrant[];
 
   constructor(
     policy:
@@ -150,7 +177,9 @@ export class PackageCapabilityPolicy {
             capability !==
               "host.environment.read" &&
             capability !==
-              "host.secrets.read"
+              "host.secrets.read" &&
+            capability !==
+              "network.access"
         )
       );
 
@@ -190,6 +219,21 @@ export class PackageCapabilityPolicy {
               grant.packageId,
             secrets:
               [...grant.secrets],
+          })
+        );
+
+    this.packageNetworkGrants =
+      (policy.packageNetworkGrants ?? [])
+        .map(
+          grant => ({
+            publisherId:
+              grant.publisherId,
+            packageId:
+              grant.packageId,
+            origin:
+              grant.origin,
+            methods:
+              [...grant.methods],
           })
         );
   }
@@ -265,6 +309,25 @@ export class PackageCapabilityPolicy {
             manifest.id,
             capability,
             "has no matching package-scoped secret grant in the active package execution policy"
+          );
+        }
+
+        continue;
+      }
+
+      if (
+        capability ===
+        "network.access"
+      ) {
+        if (
+          !this.hasManifestNetworkGrant(
+            manifest
+          )
+        ) {
+          this.deny(
+            manifest.id,
+            capability,
+            "has no matching package-scoped network grant in the active package execution policy"
           );
         }
 
@@ -366,6 +429,25 @@ export class PackageCapabilityPolicy {
           manifest.id,
           capability,
           "has no matching package-scoped secret grant in the active package execution policy"
+        );
+      }
+
+      return;
+    }
+
+    if (
+      capability ===
+      "network.access"
+    ) {
+      if (
+        !this.hasManifestNetworkGrant(
+          manifest
+        )
+      ) {
+        this.deny(
+          manifest.id,
+          capability,
+          "has no matching package-scoped network grant in the active package execution policy"
         );
       }
 
@@ -505,6 +587,63 @@ export class PackageCapabilityPolicy {
     }
   }
 
+  assertNetworkAccess(
+    manifest:
+      CapabilityManifest,
+    origin: string,
+    method:
+      PackageNetworkMethod
+  ): void {
+    this.assertCapability(
+      manifest,
+      "network.access"
+    );
+
+    const declaration =
+      (manifest.networkAccess ?? [])
+        .find(
+          candidate =>
+            candidate.origin ===
+            origin
+        );
+
+    if (!declaration) {
+      this.denyNetwork(
+        manifest.id,
+        origin,
+        method,
+        "origin is not declared by the package manifest"
+      );
+    }
+
+    if (
+      !declaration.methods.includes(
+        method
+      )
+    ) {
+      this.denyNetwork(
+        manifest.id,
+        origin,
+        method,
+        "method is not declared for that origin by the package manifest"
+      );
+    }
+
+    if (
+      !this.hasExactNetworkGrant(
+        manifest,
+        origin,
+        method
+      )
+    ) {
+      this.denyNetwork(
+        manifest.id,
+        origin,
+        method,
+        "is denied by the active package-scoped network policy"
+      );
+    }
+  }
   private hasManifestProjectFileGrant(
     manifest:
       CapabilityManifest
@@ -646,6 +785,55 @@ export class PackageCapabilityPolicy {
       );
   }
 
+  private hasManifestNetworkGrant(
+    manifest:
+      CapabilityManifest
+  ): boolean {
+    return (
+      manifest.networkAccess ?? []
+    ).some(
+      declaration =>
+        this.packageNetworkGrants
+          .some(
+            grant =>
+              grant.publisherId ===
+                manifest.publisher.id &&
+              grant.packageId ===
+                manifest.id &&
+              grant.origin ===
+                declaration.origin &&
+              grant.methods.some(
+                method =>
+                  declaration.methods.includes(
+                    method
+                  )
+              )
+          )
+    );
+  }
+
+  private hasExactNetworkGrant(
+    manifest:
+      CapabilityManifest,
+    origin: string,
+    method:
+      PackageNetworkMethod
+  ): boolean {
+    return this.packageNetworkGrants
+      .some(
+        grant =>
+          grant.publisherId ===
+            manifest.publisher.id &&
+          grant.packageId ===
+            manifest.id &&
+          grant.origin ===
+            origin &&
+          grant.methods.includes(
+            method
+          )
+      );
+  }
+
   private deny(
     packageId: string,
     capability:
@@ -664,6 +852,24 @@ export class PackageCapabilityPolicy {
     );
   }
 
+  private denyNetwork(
+    packageId: string,
+    origin: string,
+    method:
+      PackageNetworkMethod,
+    reason: string
+  ): never {
+    throw new AuroraError(
+      `Package '${packageId}' network request '${method} ${origin}' ${reason}.`,
+      {
+        code:
+          ErrorCodes
+            .PACKAGE_PERMISSION_DENIED,
+        suggestion:
+          "Grant only the exact trusted publisher, package, manifest-declared canonical origin, and HTTP methods required by the package.",
+      }
+    );
+  }
   private denyProjectFileRead(
     packageId: string,
     relativePath: string,
