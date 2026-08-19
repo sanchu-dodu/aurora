@@ -419,33 +419,43 @@ async function captureFiles(
   const snapshot = {};
 
   for (const file of files) {
-    const information =
-      await fs.stat(file);
+    const handle =
+      await fs.open(
+        file,
+        "r"
+      );
 
-    snapshot[
-      path.relative(
-        project.root,
-        file
-      )
-    ] = {
-      content:
-        (
-          await fs.readFile(
-            file
-          )
-        ).toString(
-          "base64"
-        ),
+    try {
+      const information =
+        await handle.stat();
 
-      size:
-        information.size,
+      const content =
+        await handle.readFile();
 
-      mtimeMs:
-        information.mtimeMs,
+      snapshot[
+        path.relative(
+          project.root,
+          file
+        )
+      ] = {
+        content:
+          content.toString(
+            "base64"
+          ),
 
-      mode:
-        information.mode,
-    };
+        size:
+          information.size,
+
+        mtimeMs:
+          information.mtimeMs,
+
+        mode:
+          information.mode,
+      };
+    }
+    finally {
+      await handle.close();
+    }
   }
 
   return snapshot;
