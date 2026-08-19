@@ -59,6 +59,10 @@ import {
 } from "../registry/registry.js";
 
 import {
+  PACKAGE_STATE_RELATIVE_PATH,
+} from "../state/packageStateStore.js";
+
+import {
   PackageTrustPolicy,
   type PackageTrustPolicyOptions,
 } from "../trust/packageTrustPolicy.js";
@@ -369,20 +373,48 @@ export class PackageInstaller {
       await context.transaction
         .recordModifiedFile(
           context.resolveProjectPath(
+            PACKAGE_STATE_RELATIVE_PATH
+          )
+        );
+
+      await context.transaction
+        .recordModifiedFile(
+          context.resolveProjectPath(
             "aurora.lock"
           )
         );
 
       for (const batch of batches) {
+        let batchFailed = false;
+
+        let batchFailure:
+          unknown;
+
         await Promise.all(
           batch.map(
-            (packageName) =>
-              worker.install(
-                packageName,
-                context
-              )
+            async (packageName) => {
+              try {
+                await worker.install(
+                  packageName,
+                  context
+                );
+              }
+              catch (error) {
+                if (!batchFailed) {
+                  batchFailed =
+                    true;
+
+                  batchFailure =
+                    error;
+                }
+              }
+            }
           )
         );
+
+        if (batchFailed) {
+          throw batchFailure;
+        }
       }
 
       dependencyGraph.print();

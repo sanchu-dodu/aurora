@@ -1,4 +1,4 @@
-﻿import fs from "node:fs/promises";
+import fs from "node:fs/promises";
 import path from "node:path";
 
 import { ConfigContext } from "./configContext.js";
@@ -13,18 +13,29 @@ import {
   redactText,
 } from "../../security/secretRedactor.js";
 
+import type {
+  PackageOwnershipRecorder,
+} from "../state/packageOwnershipRecorder.js";
+
 export class InstallerContext {
-  public readonly transaction: TransactionManager;
+  public readonly transaction:
+    TransactionManager;
 
-  public readonly config: ConfigContext;
+  public readonly config:
+    ConfigContext;
 
-  public readonly env: EnvContext;
+  public readonly env:
+    EnvContext;
 
   private readonly pathBoundary:
     ProjectPathBoundary;
 
   constructor(
-    projectPath: string
+    projectPath: string,
+    transaction?:
+      TransactionManager,
+    private readonly ownershipRecorder?:
+      PackageOwnershipRecorder
   ) {
     this.pathBoundary =
       new ProjectPathBoundary(
@@ -32,6 +43,7 @@ export class InstallerContext {
       );
 
     this.transaction =
+      transaction ??
       new TransactionManager(
         "package installation",
         this.pathBoundary.projectRoot
@@ -40,14 +52,27 @@ export class InstallerContext {
     this.config =
       new ConfigContext(
         this.pathBoundary,
-        this.transaction
+        this.transaction,
+        this.ownershipRecorder
       );
 
     this.env =
       new EnvContext(
         this.pathBoundary,
-        this.transaction
+        this.transaction,
+        this.ownershipRecorder
       );
+  }
+
+  createPackageScope(
+    ownershipRecorder:
+      PackageOwnershipRecorder
+  ): InstallerContext {
+    return new InstallerContext(
+      this.pathBoundary.projectRoot,
+      this.transaction,
+      ownershipRecorder
+    );
   }
 
   getProjectPath(): string {
@@ -77,9 +102,15 @@ export class InstallerContext {
         filePath
       );
 
-    await this.transaction.recordModifiedFile(
-      fullPath
-    );
+    await this.ownershipRecorder
+      ?.recordFileBefore(
+        filePath
+      );
+
+    await this.transaction
+      .recordModifiedFile(
+        fullPath
+      );
 
     await fs.mkdir(
       path.dirname(fullPath),
@@ -96,6 +127,8 @@ export class InstallerContext {
       "utf8"
     );
 
-    console.log(`Created ${filePath}`);
+    console.log(
+      `Created ${filePath}`
+    );
   }
 }

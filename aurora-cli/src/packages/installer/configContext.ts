@@ -1,29 +1,37 @@
 import fs from "fs/promises";
+
 import { TransactionManager } from "./transactionManager.js";
 
 import {
   ProjectPathBoundary,
 } from "../../security/projectPathBoundary.js";
 
-export class ConfigContext {
+import type {
+  PackageOwnershipRecorder,
+} from "../state/packageOwnershipRecorder.js";
 
+export class ConfigContext {
   constructor(
-    private pathBoundary: ProjectPathBoundary,
-    private transaction: TransactionManager
+    private pathBoundary:
+      ProjectPathBoundary,
+    private transaction:
+      TransactionManager,
+    private ownershipRecorder?:
+      PackageOwnershipRecorder
   ) {}
 
   async updatePackageJson(
     updater: (json: any) => void
   ): Promise<void> {
-
     const packageJsonPath =
       this.pathBoundary.resolve(
         "package.json"
       );
 
-    await this.transaction.recordModifiedFile(
-      packageJsonPath
-    );
+    await this.transaction
+      .recordModifiedFile(
+        packageJsonPath
+      );
 
     const content =
       await fs.readFile(
@@ -50,29 +58,52 @@ export class ConfigContext {
     console.log(
       "Updated package.json"
     );
-
   }
 
   async addDependency(
     packageName: string,
     version = "latest"
   ): Promise<void> {
+    let previousVersion:
+      string | null = null;
 
     await this.updatePackageJson(
       (json) => {
-
         json.dependencies ??= {};
 
-        json.dependencies[packageName] =
-          version;
+        const previous =
+          json.dependencies[
+            packageName
+          ];
 
+        if (
+          previous !== undefined &&
+          typeof previous !==
+            "string"
+        ) {
+          throw new TypeError(
+            `Dependency '${packageName}' has an invalid existing version.`
+          );
+        }
+
+        previousVersion =
+          previous ?? null;
+
+        json.dependencies[
+          packageName
+        ] = version;
       }
     );
+
+    this.ownershipRecorder
+      ?.recordDependency(
+        packageName,
+        version,
+        previousVersion
+      );
 
     console.log(
       `Added dependency ${packageName}`
     );
-
   }
-
 }

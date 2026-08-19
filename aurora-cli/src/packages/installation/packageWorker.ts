@@ -72,6 +72,15 @@ import {
 } from "../registry/registry.js";
 
 import {
+  PackageOwnershipRecorder,
+} from "../state/packageOwnershipRecorder.js";
+
+import {
+  PACKAGE_STATE_RELATIVE_PATH,
+  PackageStateStore,
+} from "../state/packageStateStore.js";
+
+import {
   PackageTrustPolicy,
 } from "../trust/packageTrustPolicy.js";
 
@@ -187,10 +196,21 @@ export class PackageWorker {
         manifest
       );
 
+    const ownershipRecorder =
+      new PackageOwnershipRecorder(
+        context.getProjectPath(),
+        manifest
+      );
+
+    const packageContext =
+      context.createPackageScope(
+        ownershipRecorder
+      );
+
     const projectFileReader =
       new PackageProjectFileReadBroker({
         projectRoot:
-          context.getProjectPath(),
+          packageContext.getProjectPath(),
         accessPolicy:
           this.capabilityPolicy,
       });
@@ -235,7 +255,7 @@ export class PackageWorker {
         this.packageRoot,
         hookDeclaration.path,
         "beforeInstall",
-        context
+        packageContext
       );
     }
 
@@ -246,7 +266,7 @@ export class PackageWorker {
           this.packageRoot,
           installerDeclaration.path,
           "install",
-          context
+          packageContext
         );
 
       /*
@@ -287,7 +307,7 @@ export class PackageWorker {
 
       await installTemplates(
         manifest,
-        context,
+        packageContext,
         this.packageRoot
       );
     }
@@ -298,7 +318,7 @@ export class PackageWorker {
         this.packageRoot,
         hookDeclaration.path,
         "afterInstall",
-        context
+        packageContext
       );
     }
 
@@ -312,6 +332,23 @@ export class PackageWorker {
           "package.json"
         )
       );
+
+    const ownershipReceipt =
+      await ownershipRecorder
+        .finalize();
+
+    await context.transaction
+      .recordModifiedFile(
+        context.resolveProjectPath(
+          PACKAGE_STATE_RELATIVE_PATH
+        )
+      );
+
+    await new PackageStateStore(
+      context.getProjectPath()
+    ).upsertReceipt(
+      ownershipReceipt
+    );
 
     await cache.install(
       packageId,
