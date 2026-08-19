@@ -75,6 +75,10 @@ import {
   PackageOwnershipRecorder,
 } from "../state/packageOwnershipRecorder.js";
 
+import type {
+  PackageStateReceipt,
+} from "../state/packageStateSchema.js";
+
 import {
   PACKAGE_STATE_RELATIVE_PATH,
   PackageStateStore,
@@ -83,6 +87,25 @@ import {
 import {
   PackageTrustPolicy,
 } from "../trust/packageTrustPolicy.js";
+
+export interface PackageWorkerUpdateOptions {
+  readonly mode:
+    "update";
+
+  readonly expectedVersion:
+    string;
+}
+
+export interface PackageWorkerUpdateResult {
+  readonly version:
+    string;
+
+  readonly checksum:
+    string;
+
+  readonly receipt:
+    PackageStateReceipt;
+}
 
 export class PackageWorker {
   private readonly capabilityPolicy:
@@ -130,8 +153,13 @@ export class PackageWorker {
 
   async install(
     packageId: string,
-    context: InstallerContext
-  ): Promise<void> {
+    context: InstallerContext,
+    options?:
+      PackageWorkerUpdateOptions
+  ): Promise<
+    void |
+    PackageWorkerUpdateResult
+  > {
     const registry =
       new PackageRegistry(
         this.packageRoot
@@ -161,6 +189,7 @@ export class PackageWorker {
     );
 
     if (
+      options?.mode !== "update" &&
       await cache.isInstalled(
         packageId
       )
@@ -195,6 +224,33 @@ export class PackageWorker {
       .assertManifest(
         manifest
       );
+
+    /*
+     * Explicit update execution is bound to the
+     * exact version selected during planning.
+     *
+     * This check occurs after publisher trust,
+     * artifact verification, and capability-policy
+     * validation but before a mutation-capable
+     * package InstallerContext is created.
+     */
+    if (
+      options?.mode === "update" &&
+      manifest.version !==
+        options.expectedVersion
+    ) {
+      throw new AuroraError(
+        `Package '${packageId}' resolved version '${manifest.version}' while update execution requires '${options.expectedVersion}'.`,
+        {
+          code:
+            ErrorCodes
+              .PACKAGE_INTEGRITY_FAILED,
+
+          suggestion:
+            "Re-run the update check and execute only the exact version that was planned.",
+        }
+      );
+    }
 
     const ownershipRecorder =
       new PackageOwnershipRecorder(
@@ -336,6 +392,31 @@ export class PackageWorker {
     const ownershipReceipt =
       await ownershipRecorder
         .finalize();
+
+    /*
+     * Update mode deliberately stops here.
+     *
+     * The caller receives the fresh ownership
+     * capture while package-state, cache, and lock
+     * persistence remain deferred to the
+     * ownership-aware update coordinator.
+     *
+     * Normal installation continues through the
+     * original metadata block below unchanged.
+     */
+    if (
+      options?.mode === "update"
+    ) {
+      return {
+        version:
+          manifest.version,
+
+        checksum,
+
+        receipt:
+          ownershipReceipt,
+      };
+    }
 
     await context.transaction
       .recordModifiedFile(

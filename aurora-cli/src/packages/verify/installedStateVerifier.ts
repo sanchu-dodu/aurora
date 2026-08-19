@@ -28,9 +28,14 @@ import {
   LockManager,
 } from "../lock/lockManager.js";
 
+import {
+  parsePackageStateReceipt,
+} from "../state/packageStateSchema.js";
+
 import type {
   PackageOwnedDependency,
   PackageOwnedEnvironment,
+  PackageStateReceipt,
 } from "../state/packageStateSchema.js";
 
 import {
@@ -352,6 +357,175 @@ export class InstalledStateVerifier {
           `Package-introduced environment variable '${variable.name}' is missing from .env.example.`
         );
       }
+    }
+  }
+
+  /**
+   * Verify an explicitly supplied ownership receipt
+   * without reading PackageStateStore.
+   *
+   * This entry point is for callers that already
+   * hold the process-wide lifecycle WriteLock.
+   * PackageStateStore.read()/getReceipt() acquire
+   * that same non-reentrant lock, so invoking the
+   * normal verify() method while the lock is held
+   * would deadlock.
+   *
+   * The supplied receipt is independently schema
+   * validated before any verification is trusted.
+   */
+  async verifyReceipt(
+    packageId: string,
+    projectPath: string,
+    receiptInput:
+      PackageStateReceipt
+  ): Promise<void> {
+    try {
+      const receipt =
+        parsePackageStateReceipt(
+          receiptInput
+        );
+
+      if (
+        receipt.id !==
+          packageId
+      ) {
+        throw integrityFailure(
+          packageId,
+          `Supplied ownership receipt belongs to package '${receipt.id}'.`
+        );
+      }
+
+      const pathBoundary =
+        new ProjectPathBoundary(
+          projectPath
+        );
+
+      const cache =
+        await new CacheManager(
+          projectPath
+        ).readExisting();
+
+      const cached =
+        cache[
+          packageId
+        ];
+
+      if (!cached) {
+        throw integrityFailure(
+          packageId,
+          "The package is missing from the installed-package cache."
+        );
+      }
+
+      if (
+        cached.version !==
+          receipt.version
+      ) {
+        throw integrityFailure(
+          packageId,
+          `Installed cache version '${cached.version}' does not match ownership receipt version '${receipt.version}'.`
+        );
+      }
+
+      const lockFile =
+        await new LockManager(
+          projectPath
+        ).read();
+
+      const lockedVersion =
+        lockFile.packages[
+          packageId
+        ];
+
+      if (
+        lockedVersion ===
+          undefined
+      ) {
+        throw integrityFailure(
+          packageId,
+          "The package is missing from aurora.lock."
+        );
+      }
+
+      if (
+        lockedVersion !==
+          receipt.version
+      ) {
+        throw integrityFailure(
+          packageId,
+          `Locked version '${lockedVersion}' does not match ownership receipt version '${receipt.version}'.`
+        );
+      }
+
+      for (
+        const ownedFile
+        of receipt.files
+      ) {
+        const digest =
+          await this
+            .readStableDigest(
+              pathBoundary,
+              ownedFile.path,
+              true
+            );
+
+        if (
+          digest ===
+            null
+        ) {
+          throw integrityFailure(
+            packageId,
+            `Owned file '${ownedFile.path}' is missing.`
+          );
+        }
+
+        if (
+          digest !==
+            ownedFile.sha256
+        ) {
+          throw integrityFailure(
+            packageId,
+            `Owned file '${ownedFile.path}' does not match its recorded installed digest.`
+          );
+        }
+      }
+
+      await this
+        .verifyDependencies(
+          packageId,
+          pathBoundary,
+          receipt.dependencies
+        );
+
+      await this
+        .verifyEnvironment(
+          packageId,
+          pathBoundary,
+          receipt.environment
+        );
+    }
+    catch (error) {
+      if (
+        error instanceof
+          AuroraError &&
+        error.code ===
+          ErrorCodes
+            .PACKAGE_INTEGRITY_FAILED
+      ) {
+        throw error;
+      }
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(error);
+
+      throw integrityFailure(
+        packageId,
+        message,
+        error
+      );
     }
   }
 
