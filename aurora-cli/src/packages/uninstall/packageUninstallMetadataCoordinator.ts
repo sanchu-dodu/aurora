@@ -5,6 +5,10 @@ import {
 } from "../../core/fileTransaction.js";
 
 import {
+  DurableFileTransaction,
+} from "../lifecycle/durableFileTransaction.js";
+
+import {
   ProjectPathBoundary,
 } from "../../security/projectPathBoundary.js";
 
@@ -60,6 +64,15 @@ export interface PackageUninstallMetadataExecution {
 
   readonly mutateProject:
     () => Promise<void>;
+
+  /*
+   * Optional so existing direct callers using a legacy
+   * FileTransaction remain source-compatible.
+   */
+  readonly verifyProject?:
+    (
+      state: PackageState
+    ) => Promise<void>;
 }
 
 export class PackageUninstallMetadataCoordinator {
@@ -82,10 +95,16 @@ export class PackageUninstallMetadataCoordinator {
     execution:
       PackageUninstallMetadataExecution
   ): Promise<void> {
-    await this.writeLock
-      .acquire();
+    let writeLockHeld =
+      false;
 
     try {
+      await this.writeLock
+        .acquire();
+
+      writeLockHeld =
+        true;
+
       const current =
         await this
           .readMetadata();
@@ -115,6 +134,15 @@ export class PackageUninstallMetadataCoordinator {
             "aurora.lock"
           )
         );
+
+      if (
+        execution.transaction
+          instanceof
+            DurableFileTransaction
+      ) {
+        await execution.transaction
+          .beginMutation();
+      }
 
       await execution
         .mutateProject();
@@ -169,8 +197,39 @@ export class PackageUninstallMetadataCoordinator {
         nextLock
       );
 
-      execution.transaction
-        .commit();
+      if (
+        execution.transaction
+          instanceof
+            DurableFileTransaction
+      ) {
+        await execution.transaction
+          .beginVerification();
+      }
+
+      await this
+        .assertFinalMetadata(
+          nextState,
+          nextCache,
+          nextLock
+        );
+
+      await execution
+        .verifyProject?.(
+          nextState
+        );
+
+      if (
+        execution.transaction
+          instanceof
+            DurableFileTransaction
+      ) {
+        await execution.transaction
+          .commitDurably();
+      }
+      else {
+        execution.transaction
+          .commit();
+      }
     }
     catch (error) {
       /*
@@ -187,8 +246,51 @@ export class PackageUninstallMetadataCoordinator {
       throw error;
     }
     finally {
-      this.writeLock
-        .release();
+      if (writeLockHeld) {
+        this.writeLock
+          .release();
+      }
+    }
+  }
+
+  private async assertFinalMetadata(
+    expectedState:
+      PackageState,
+    expectedCache:
+      Record<
+        string,
+        CachedPackage
+      >,
+    expectedLock:
+      LockFile
+  ): Promise<void> {
+    const actual =
+      await this
+        .readMetadata();
+
+    if (
+      canonicalState(
+        actual.state
+      ) !==
+        canonicalState(
+          expectedState
+        ) ||
+      canonicalJson(
+        actual.cache
+      ) !==
+        canonicalJson(
+          expectedCache
+        ) ||
+      canonicalJson(
+        actual.lockFile
+      ) !==
+        canonicalJson(
+          expectedLock
+        )
+    ) {
+      throw new Error(
+        "Uninstall metadata verification failed after persistence."
+      );
     }
   }
 
@@ -569,6 +671,62 @@ function canonicalState(
       state
     )
   );
+}
+
+function canonicalJson(
+  value: unknown
+): string {
+  return JSON.stringify(
+    normalizeJson(
+      value
+    )
+  );
+}
+
+function normalizeJson(
+  value: unknown
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map(
+      normalizeJson
+    );
+  }
+
+  if (
+    typeof value ===
+      "object" &&
+    value !== null
+  ) {
+    const normalized:
+      Record<
+        string,
+        unknown
+      > = {};
+
+    for (
+      const key
+      of Object.keys(
+        value
+      ).sort(
+        compareText
+      )
+    ) {
+      normalized[key] =
+        normalizeJson(
+          (
+            value as
+              Record<
+                string,
+                unknown
+              >
+          )[key]
+        );
+    }
+
+    return normalized;
+  }
+
+  return value;
 }
 
 function canonicalReceipt(
