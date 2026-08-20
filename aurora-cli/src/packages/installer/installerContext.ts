@@ -112,12 +112,10 @@ export class InstallerContext {
         fullPath
       );
 
-    await fs.mkdir(
-      path.dirname(fullPath),
-      {
-        recursive: true,
-      }
-    );
+    await this.transaction
+      .ensureDirectory(
+        path.dirname(fullPath)
+      );
 
     await fs.writeFile(
       this.resolveProjectPath(

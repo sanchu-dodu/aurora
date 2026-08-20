@@ -46,6 +46,14 @@ import {
   PackageWorker,
 } from "../installation/packageWorker.js";
 
+import {
+  DurableFileTransaction,
+} from "../lifecycle/durableFileTransaction.js";
+
+import {
+  ProjectLifecycleLock,
+} from "../lifecycle/projectLifecycleLock.js";
+
 import type {
   PackageManifest,
 } from "../manifestSchema.js";
@@ -61,6 +69,10 @@ import {
 import {
   PACKAGE_STATE_RELATIVE_PATH,
 } from "../state/packageStateStore.js";
+
+import {
+  InstalledStateVerifier,
+} from "../verify/installedStateVerifier.js";
 
 import {
   PackageTrustPolicy,
@@ -280,16 +292,6 @@ export class PackageInstaller {
       );
     }
 
-    const installed =
-      await new CacheManager(
-        this.projectRoot
-      ).readExisting();
-
-    checkConflicts(
-      manifests,
-      installed
-    );
-
     const analyzer =
       new DependencyAnalyzer(
         dependencyGraph
@@ -348,73 +350,129 @@ export class PackageInstaller {
 
     console.log("");
 
-    const context =
-      new InstallerContext(
-        this.projectRoot
-      );
-
-    const worker =
-      new PackageWorker(
-        this.packageRoot,
-        this.executionPolicy,
-        this.trustPolicy,
-        undefined,
-        this.environmentProvider
-      );
+    const lifecycleLock =
+      await ProjectLifecycleLock
+        .acquire(
+          this.projectRoot
+        );
 
     try {
-      await context.transaction
-        .recordModifiedFile(
-          context.resolveProjectPath(
-            ".aurora/cache.json"
-          )
+      const installed =
+        await new CacheManager(
+          this.projectRoot
+        ).readExisting();
+
+      checkConflicts(
+        manifests,
+        installed
+      );
+
+      const worker =
+        new PackageWorker(
+          this.packageRoot,
+          this.executionPolicy,
+          this.trustPolicy,
+          undefined,
+          this.environmentProvider
         );
 
-      await context.transaction
-        .recordModifiedFile(
-          context.resolveProjectPath(
-            PACKAGE_STATE_RELATIVE_PATH
-          )
-        );
+      const transaction =
+        await DurableFileTransaction
+          .begin({
+            operationName:
+              "package installation",
 
-      await context.transaction
-        .recordModifiedFile(
-          context.resolveProjectPath(
-            "aurora.lock"
-          )
-        );
+            operation:
+              "install",
 
-      for (const batch of batches) {
-        let batchFailed = false;
+            packageIds:
+              installationOrder,
 
-        let batchFailure:
-          unknown;
+            projectPath:
+              this.projectRoot,
+          });
 
-        await Promise.all(
-          batch.map(
-            async (packageName) => {
-              try {
-                await worker.install(
-                  packageName,
-                  context
-                );
-              }
-              catch (error) {
-                if (!batchFailed) {
-                  batchFailed =
-                    true;
+      try {
+        const context =
+          new InstallerContext(
+            this.projectRoot,
+            transaction
+          );
 
-                  batchFailure =
-                    error;
-                }
-              }
-            }
-          )
-        );
+        await transaction
+          .recordModifiedFile(
+            context.resolveProjectPath(
+              ".aurora/cache.json"
+            )
+          );
 
-        if (batchFailed) {
-          throw batchFailure;
+        await transaction
+          .recordModifiedFile(
+            context.resolveProjectPath(
+              PACKAGE_STATE_RELATIVE_PATH
+            )
+          );
+
+        await transaction
+          .recordModifiedFile(
+            context.resolveProjectPath(
+              "aurora.lock"
+            )
+          );
+
+        await transaction
+          .beginMutation();
+
+        for (const batch of batches) {
+          for (
+            const packageName
+            of batch
+          ) {
+            await worker.install(
+              packageName,
+              context
+            );
+          }
         }
+
+        await transaction
+          .beginVerification();
+
+        const installedStateVerifier =
+          new InstalledStateVerifier();
+
+        for (
+          const packageName
+          of installationOrder
+        ) {
+          if (
+            installed[
+              packageName
+            ] !== undefined
+          ) {
+            continue;
+          }
+
+          await installedStateVerifier
+            .verify(
+              packageName,
+              this.projectRoot
+            );
+        }
+
+        await transaction
+          .commitDurably();
+      }
+      catch (error) {
+        console.log("");
+        console.log(
+          "Installation failed."
+        );
+
+        await transaction
+          .rollback();
+
+        throw error;
       }
 
       dependencyGraph.print();
@@ -422,16 +480,10 @@ export class PackageInstaller {
       console.log(
         "Installation finished."
       );
-    } catch (error) {
-      console.log("");
-      console.log(
-        "Installation failed."
-      );
-
-      await context.transaction
-        .rollback();
-
-      throw error;
+    }
+    finally {
+      await lifecycleLock
+        .release();
     }
   }
 }
