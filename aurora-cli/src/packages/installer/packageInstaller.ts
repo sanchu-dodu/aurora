@@ -51,6 +51,10 @@ import {
 } from "../lifecycle/durableFileTransaction.js";
 
 import {
+  LifecycleRecoveryManager,
+} from "../lifecycle/lifecycleRecoveryManager.js";
+
+import {
   ProjectLifecycleLock,
 } from "../lifecycle/projectLifecycleLock.js";
 
@@ -357,6 +361,12 @@ export class PackageInstaller {
         );
 
     try {
+      await new LifecycleRecoveryManager(
+        this.projectRoot
+      ).recoverIncomplete(
+        lifecycleLock
+      );
+
       const installed =
         await new CacheManager(
           this.projectRoot
