@@ -18,6 +18,7 @@ import {
   durableCreateDirectory,
   durableEnsureDirectory,
   durableWriteFile,
+  syncDirectory,
 } from "./durableFileWriter.js";
 
 import {
@@ -40,6 +41,9 @@ import {
 
 export const LIFECYCLE_JOURNAL_RELATIVE_ROOT =
   ".aurora/lifecycle-journal";
+
+export const LIFECYCLE_JOURNAL_RECOVERED_RELATIVE_ROOT =
+  `${LIFECYCLE_JOURNAL_RELATIVE_ROOT}/recovered`;
 
 export interface CreateLifecycleJournalInput {
   readonly transactionId?:
@@ -600,6 +604,13 @@ export class LifecycleJournalStore {
         );
       }
 
+      if (
+        entry.name ===
+          "recovered"
+      ) {
+        continue;
+      }
+
       const transactionId =
         parseLifecycleTransactionId(
           entry.name
@@ -623,9 +634,85 @@ export class LifecycleJournalStore {
     return journals;
   }
 
+  async archiveRecovered(
+    transactionIdInput: string
+  ): Promise<void> {
+    const transactionId =
+      parseLifecycleTransactionId(
+        transactionIdInput
+      );
+
+    const journal =
+      await this.read(
+        transactionId
+      );
+
+    if (
+      journal.phase ===
+        "committed"
+    ) {
+      throw new Error(
+        `Cannot archive committed lifecycle transaction '${transactionId}' as recovered.`
+      );
+    }
+
+    await durableEnsureDirectory(
+      this.recoveredRoot
+    );
+
+    const source =
+      this.transactionDirectory(
+        transactionId
+      );
+
+    const destination =
+      this.recoveredTransactionDirectory(
+        transactionId
+      );
+
+    try {
+      await fs.lstat(
+        destination
+      );
+
+      throw new Error(
+        `Recovered lifecycle transaction archive '${transactionId}' already exists.`
+      );
+    }
+    catch (error) {
+      const code =
+        (
+          error as NodeJS.ErrnoException
+        ).code;
+
+      if (code !== "ENOENT") {
+        throw error;
+      }
+    }
+
+    await fs.rename(
+      source,
+      destination
+    );
+
+    await syncDirectory(
+      this.journalRoot
+    );
+
+    await syncDirectory(
+      this.recoveredRoot
+    );
+  }
+
   private get journalRoot(): string {
     return this.pathBoundary.resolve(
       LIFECYCLE_JOURNAL_RELATIVE_ROOT
+    );
+  }
+
+  private get recoveredRoot(): string {
+    return this.pathBoundary.resolve(
+      LIFECYCLE_JOURNAL_RECOVERED_RELATIVE_ROOT
     );
   }
 
@@ -642,6 +729,14 @@ export class LifecycleJournalStore {
   ): string {
     return this.pathBoundary.resolve(
       `${LIFECYCLE_JOURNAL_RELATIVE_ROOT}/${transactionId}/blobs`
+    );
+  }
+
+  private recoveredTransactionDirectory(
+    transactionId: string
+  ): string {
+    return this.pathBoundary.resolve(
+      `${LIFECYCLE_JOURNAL_RECOVERED_RELATIVE_ROOT}/${transactionId}`
     );
   }
 
