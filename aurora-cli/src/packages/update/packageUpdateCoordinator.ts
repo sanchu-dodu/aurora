@@ -4,6 +4,18 @@ import {
   InstallerContext,
 } from "../installer/installerContext.js";
 
+import {
+  DurableFileTransaction,
+} from "../lifecycle/durableFileTransaction.js";
+
+import {
+  LifecycleRecoveryManager,
+} from "../lifecycle/lifecycleRecoveryManager.js";
+
+import {
+  ProjectLifecycleLock,
+} from "../lifecycle/projectLifecycleLock.js";
+
 import type {
   PackageState,
   PackageStateReceipt,
@@ -153,29 +165,69 @@ export class PackageUpdateCoordinator {
       );
     }
 
-    /*
-     * Perform the ordinary installed-state gate
-     * before taking the lifecycle lock. Normal
-     * InstalledStateVerifier.verify() reads
-     * PackageStateStore and therefore acquires the
-     * same non-reentrant WriteLock internally.
-     */
-    await this.verifier.verify(
-      packageId,
-      projectPath
-    );
+    const lifecycleLock =
+      await ProjectLifecycleLock
+        .acquire(
+          projectPath
+        );
 
-    await this.writeLock
-      .acquire();
+    let writeLockHeld =
+      false;
 
-    let context:
-      InstallerContext |
+    let transaction:
+      DurableFileTransaction |
       undefined;
 
     try {
-      context =
+      /*
+       * Interrupted lifecycle state must be restored
+       * while this process holds the same outer authority
+       * that will protect the new update transaction.
+       */
+      await new LifecycleRecoveryManager(
+        projectPath
+      ).recoverIncomplete(
+        lifecycleLock
+      );
+
+      /*
+       * Perform the ordinary installed-state gate before
+       * taking WriteLock. InstalledStateVerifier.verify()
+       * reads PackageStateStore and therefore acquires the
+       * same non-reentrant in-process lock internally.
+       * ProjectLifecycleLock remains held throughout.
+       */
+      await this.verifier.verify(
+        packageId,
+        projectPath
+      );
+
+      await this.writeLock
+        .acquire();
+
+      writeLockHeld =
+        true;
+
+      transaction =
+        await DurableFileTransaction
+          .begin({
+            operationName:
+              "package update",
+
+            operation:
+              "update",
+
+            packageIds: [
+              packageId,
+            ],
+
+            projectPath,
+          });
+
+      const context =
         new InstallerContext(
-          projectPath
+          projectPath,
+          transaction
         );
 
       const statePath =
@@ -245,6 +297,9 @@ export class PackageUpdateCoordinator {
           projectPath,
           metadata.receipt
         );
+
+      await transaction
+        .beginMutation();
 
       const execution =
         await this.executor.execute(
@@ -345,10 +400,13 @@ export class PackageUpdateCoordinator {
         metadata
       );
 
+      await transaction
+        .beginVerification();
+
       /*
        * Final verification occurs while rollback
        * bytes are still retained and while the
-       * lifecycle WriteLock remains held.
+       * lifecycle locks remain held.
        */
       await this.verifier
         .verifyReceipt(
@@ -360,21 +418,35 @@ export class PackageUpdateCoordinator {
       /*
        * Verification proved the complete target
        * state. Discard rollback snapshots only now,
-       * immediately before releasing WriteLock.
+       * after the committed phase is durable.
        */
-      context.transaction
-        .commit();
+      await transaction
+        .commitDurably();
     }
     catch (error) {
-      if (context) {
-        await context.transaction
+      if (transaction) {
+        await transaction
           .rollback();
       }
 
       throw error;
     }
     finally {
-      this.writeLock.release();
+      try {
+        if (writeLockHeld) {
+          this.writeLock
+            .release();
+        }
+      }
+      finally {
+        /*
+         * Cross-process lifecycle authority is always
+         * released last, after durable commit or handled
+         * rollback and after the inner WriteLock.
+         */
+        await lifecycleLock
+          .release();
+      }
     }
   }
 
