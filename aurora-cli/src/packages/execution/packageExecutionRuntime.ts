@@ -61,6 +61,10 @@ const pending =
 let requestSequence = 0;
 let sentBytes = 0;
 
+let privilegedRequestQueue:
+  Promise<void> =
+    Promise.resolve();
+
 class PackageOutputLimitError
 extends Error {
   constructor() {
@@ -130,6 +134,31 @@ function request(
   action: string,
   input?: unknown
 ): Promise<unknown> {
+  const queuedRequest =
+    privilegedRequestQueue
+      .then(
+        () => sendRequest(
+          capability,
+          action,
+          input
+        )
+      );
+
+  privilegedRequestQueue =
+    queuedRequest.then(
+      () => undefined,
+      () => undefined
+    );
+
+  return queuedRequest;
+}
+
+function sendRequest(
+  capability:
+    PackageCapability,
+  action: string,
+  input?: unknown
+): Promise<unknown> {
   const requestId =
     `request-${++requestSequence}`;
 
@@ -160,6 +189,11 @@ function request(
       );
     }
   );
+}
+
+async function drainPrivilegedRequests():
+  Promise<void> {
+  await privilegedRequestQueue;
 }
 
 const context:
@@ -387,6 +421,8 @@ try {
 
     await handler(context);
 
+    await drainPrivilegedRequests();
+
     await sendToParent({
       type: "completed",
       executed: true,
@@ -394,6 +430,8 @@ try {
   }
 }
 catch (error) {
+  await drainPrivilegedRequests();
+
   if (
     !(
       error instanceof
