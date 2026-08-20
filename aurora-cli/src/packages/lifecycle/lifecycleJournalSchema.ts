@@ -28,7 +28,8 @@ export type LifecycleJournalPhase =
 export type LifecycleJournalOperation =
   | "install"
   | "update"
-  | "uninstall";
+  | "uninstall"
+  | "repair";
 
 export type LifecycleJournalFileBeforeImage =
   | {
@@ -204,6 +205,7 @@ export const LifecycleJournalOperationSchema =
     "install",
     "update",
     "uninstall",
+    "repair",
   ]);
 
 export const LifecycleJournalFileBeforeImageSchema =
