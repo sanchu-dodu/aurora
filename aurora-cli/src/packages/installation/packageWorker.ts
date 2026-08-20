@@ -96,6 +96,20 @@ export interface PackageWorkerUpdateOptions {
     string;
 }
 
+export interface PackageWorkerRepairOptions {
+  readonly mode:
+    "repair";
+
+  readonly expectedVersion:
+    string;
+
+  readonly expectedPublisherId:
+    string;
+
+  readonly expectedArtifactSha256:
+    string;
+}
+
 export interface PackageWorkerUpdateResult {
   readonly version:
     string;
@@ -106,6 +120,9 @@ export interface PackageWorkerUpdateResult {
   readonly receipt:
     PackageStateReceipt;
 }
+
+export type PackageWorkerLifecycleResult =
+  PackageWorkerUpdateResult;
 
 export class PackageWorker {
   private readonly capabilityPolicy:
@@ -155,10 +172,11 @@ export class PackageWorker {
     packageId: string,
     context: InstallerContext,
     options?:
-      PackageWorkerUpdateOptions
+      PackageWorkerUpdateOptions |
+      PackageWorkerRepairOptions
   ): Promise<
     void |
-    PackageWorkerUpdateResult
+    PackageWorkerLifecycleResult
   > {
     const registry =
       new PackageRegistry(
@@ -189,7 +207,7 @@ export class PackageWorker {
     );
 
     if (
-      options?.mode !== "update" &&
+      options === undefined &&
       await cache.isInstalled(
         packageId
       )
@@ -226,8 +244,9 @@ export class PackageWorker {
       );
 
     /*
-     * Explicit update execution is bound to the
-     * exact version selected during planning.
+     * Explicit update and repair executions are
+     * bound to the exact version selected by their
+     * lifecycle coordinator.
      *
      * This check occurs after publisher trust,
      * artifact verification, and capability-policy
@@ -235,12 +254,12 @@ export class PackageWorker {
      * package InstallerContext is created.
      */
     if (
-      options?.mode === "update" &&
+      options !== undefined &&
       manifest.version !==
         options.expectedVersion
     ) {
       throw new AuroraError(
-        `Package '${packageId}' resolved version '${manifest.version}' while update execution requires '${options.expectedVersion}'.`,
+        `Package '${packageId}' resolved version '${manifest.version}' while ${options.mode} execution requires '${options.expectedVersion}'.`,
         {
           code:
             ErrorCodes
@@ -248,6 +267,51 @@ export class PackageWorker {
 
           suggestion:
             "Re-run the update check and execute only the exact version that was planned.",
+        }
+      );
+    }
+
+    /*
+     * Repair must never execute a same-version artifact
+     * that differs from the exact publisher and artifact
+     * identity recorded at installation time. These gates
+     * run before any package-controlled code receives a
+     * mutation-capable context.
+     */
+    if (
+      options?.mode ===
+        "repair" &&
+      manifest.publisher.id !==
+        options.expectedPublisherId
+    ) {
+      throw new AuroraError(
+        `Package '${packageId}' resolved publisher '${manifest.publisher.id}' while repair requires '${options.expectedPublisherId}'.`,
+        {
+          code:
+            ErrorCodes
+              .PACKAGE_INTEGRITY_FAILED,
+
+          suggestion:
+            "Restore the exact trusted package artifact recorded by the installed ownership receipt before retrying repair.",
+        }
+      );
+    }
+
+    if (
+      options?.mode ===
+        "repair" &&
+      manifest.artifact.digest !==
+        options.expectedArtifactSha256
+    ) {
+      throw new AuroraError(
+        `Package '${packageId}' resolved artifact '${manifest.artifact.digest}' while repair requires '${options.expectedArtifactSha256}'.`,
+        {
+          code:
+            ErrorCodes
+              .PACKAGE_INTEGRITY_FAILED,
+
+          suggestion:
+            "Restore the exact trusted package artifact recorded by the installed ownership receipt before retrying repair.",
         }
       );
     }
@@ -394,18 +458,19 @@ export class PackageWorker {
         .finalize();
 
     /*
-     * Update mode deliberately stops here.
+     * Explicit update and repair modes deliberately
+     * stop here.
      *
      * The caller receives the fresh ownership
      * capture while package-state, cache, and lock
      * persistence remain deferred to the
-     * ownership-aware update coordinator.
+     * ownership-aware lifecycle coordinator.
      *
      * Normal installation continues through the
      * original metadata block below unchanged.
      */
     if (
-      options?.mode === "update"
+      options !== undefined
     ) {
       return {
         version:
