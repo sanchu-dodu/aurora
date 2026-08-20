@@ -1638,7 +1638,7 @@ function createRealUpdateWorker(
 
 
 test(
-  "successful coordinator commit discards rollback snapshots",
+  "successful coordinator commit closes durable rollback authority",
   async () => {
     const fixture =
       await createProject();
@@ -1723,13 +1723,17 @@ test(
       );
 
       /*
-       * A rollback after a successful coordinator
-       * return must now be a no-op because commit()
-       * cleared the transaction's rollback state.
+       * A durable commit closes both the in-memory
+       * rollback snapshots and the transaction API.
+       * A later caller must not be able to undo the
+       * committed update.
        */
-      await capturedContext
-        .transaction
-        .rollback();
+      await assert.rejects(
+        capturedContext
+          .transaction
+          .rollback(),
+        /already closed/u
+      );
 
       assert.equal(
         await fs.readFile(
