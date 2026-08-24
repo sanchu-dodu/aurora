@@ -1,4 +1,8 @@
 import {
+  createHash,
+} from "node:crypto";
+
+import {
   z,
 } from "zod";
 
@@ -9,6 +13,10 @@ import {
 import {
   isPackageKeyId,
 } from "../trust/packageTrustTypes.js";
+
+import {
+  canonicalizeJson,
+} from "../trust/packageCanonicalJson.js";
 
 import {
   isManifestSemVer,
@@ -301,4 +309,20 @@ export function normalizeLockFile(
   return {
     packages,
   };
+}
+
+export function calculateOfficialRegistryLockEntryDigest(
+  input: unknown
+): string {
+  const entry =
+    parseOfficialRegistryPackageLockEntry(
+      input
+    );
+
+  return createHash("sha256")
+    .update(
+      canonicalizeJson(entry),
+      "utf8"
+    )
+    .digest("hex");
 }

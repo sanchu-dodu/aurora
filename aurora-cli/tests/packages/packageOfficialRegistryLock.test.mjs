@@ -57,6 +57,10 @@ import {
 } from "../../dist/packages/registry/officialRegistryPackageLocker.js";
 
 import {
+  OfficialRegistryPackageInstaller,
+} from "../../dist/packages/registry/officialRegistryPackageInstaller.js";
+
+import {
   createOfficialRegistrySigningPayload,
 } from "../../dist/packages/registry/officialRegistrySigningPayload.js";
 
@@ -72,6 +76,10 @@ import {
 import {
   PackageTrustStore,
 } from "../../dist/packages/trust/packageTrustStore.js";
+
+import {
+  InstalledStateVerifier,
+} from "../../dist/packages/verify/installedStateVerifier.js";
 
 import {
   createManifestV1,
@@ -656,6 +664,48 @@ async function assertIntegrityFailure(
   );
 }
 
+async function createLockedInstallFixture(
+  context
+) {
+  const fixture =
+    await createPipelineFixture(
+      context
+    );
+
+  await fs.writeFile(
+    join(
+      fixture.projectRoot,
+      "package.json"
+    ),
+    `${JSON.stringify({
+      name:
+        "official-install-project",
+      version:
+        "1.0.0",
+      private:
+        true,
+      dependencies: {},
+    })}\n`
+  );
+
+  const locked =
+    await new OfficialRegistryPackageLocker(
+      fixture.snapshot,
+      fixture.projectRoot,
+      {
+        registryOptions:
+          fixture.options,
+      }
+    ).lock(
+      fixture.extracted
+    );
+
+  return {
+    ...fixture,
+    locked,
+  };
+}
+
 test(
   "strict lock schema preserves canonical legacy version entries",
   () => {
@@ -1176,6 +1226,440 @@ test(
         "utf8"
       ),
       before
+    );
+  }
+);
+
+test(
+  "verified official package installs without downgrading its authenticated lock identity",
+  async context => {
+    const fixture =
+      await createLockedInstallFixture(
+        context
+      );
+
+    const before =
+      (
+        await new LockManager(
+          fixture.projectRoot
+        ).read()
+      ).packages.alpha;
+
+    await new OfficialRegistryPackageInstaller({
+      projectRoot:
+        fixture.projectRoot,
+      trust: {
+        requireSignatures:
+          false,
+      },
+    }).install(
+      fixture.locked
+    );
+
+    const after =
+      (
+        await new LockManager(
+          fixture.projectRoot
+        ).read()
+      ).packages.alpha;
+
+    assert.equal(
+      typeof after,
+      "object"
+    );
+    assert.deepEqual(
+      after,
+      before
+    );
+
+    await new InstalledStateVerifier()
+      .verify(
+        "alpha",
+        fixture.projectRoot
+      );
+
+    const cache =
+      JSON.parse(
+        await fs.readFile(
+          join(
+            fixture.projectRoot,
+            ".aurora",
+            "cache.json"
+          ),
+          "utf8"
+        )
+      );
+
+    assert.equal(
+      cache.alpha.version,
+      "1.0.0"
+    );
+
+    const state =
+      JSON.parse(
+        await fs.readFile(
+          join(
+            fixture.projectRoot,
+            ".aurora",
+            "package-state.json"
+          ),
+          "utf8"
+        )
+      );
+
+    assert.match(
+      state.packages.alpha
+        .officialLockSha256,
+      /^[a-f0-9]{64}$/u
+    );
+  }
+);
+
+test(
+  "verified lock receipts deeply freeze nested official identity",
+  async context => {
+    const fixture =
+      await createLockedInstallFixture(
+        context
+      );
+
+    assert.equal(
+      Object.isFrozen(
+        fixture.locked.entry
+          .archive
+      ),
+      true
+    );
+    assert.equal(
+      Object.isFrozen(
+        fixture.locked.entry
+          .publisher
+      ),
+      true
+    );
+
+    assert.throws(
+      () => {
+        fixture.locked.entry
+          .archive.digest =
+            "0".repeat(64);
+      },
+      TypeError
+    );
+  }
+);
+
+test(
+  "official registry lock does not bypass default package-signature trust",
+  async context => {
+    const fixture =
+      await createLockedInstallFixture(
+        context
+      );
+
+    await assert.rejects(
+      () =>
+        new OfficialRegistryPackageInstaller({
+          projectRoot:
+            fixture.projectRoot,
+        }).install(
+          fixture.locked
+        ),
+      error => {
+        assert.equal(
+          error.code,
+          ErrorCodes
+            .PACKAGE_SIGNATURE_REQUIRED
+        );
+        return true;
+      }
+    );
+
+    await assert.rejects(
+      fs.access(
+        join(
+          fixture.projectRoot,
+          ".aurora"
+        )
+      )
+    );
+  }
+);
+
+test(
+  "official installer rejects forged lock receipts before project mutation",
+  async context => {
+    const fixture =
+      await createLockedInstallFixture(
+        context
+      );
+
+    await assert.rejects(
+      () =>
+        new OfficialRegistryPackageInstaller({
+          projectRoot:
+            fixture.projectRoot,
+          trust: {
+            requireSignatures:
+              false,
+          },
+        }).install({
+          ...fixture.locked,
+        }),
+      TypeError
+    );
+
+    await assert.rejects(
+      fs.access(
+        join(
+          fixture.projectRoot,
+          ".aurora"
+        )
+      )
+    );
+  }
+);
+
+test(
+  "project-bound official lock receipts cannot be replayed into another project",
+  async context => {
+    const fixture =
+      await createLockedInstallFixture(
+        context
+      );
+    const otherProject =
+      join(
+        fixture.root,
+        "other-project"
+      );
+
+    await fs.mkdir(
+      otherProject
+    );
+    await fs.writeFile(
+      join(
+        otherProject,
+        "package.json"
+      ),
+      "{}\n"
+    );
+
+    await assertIntegrityFailure(
+      () =>
+        new OfficialRegistryPackageInstaller({
+          projectRoot:
+            otherProject,
+          trust: {
+            requireSignatures:
+              false,
+          },
+        }).install(
+          fixture.locked
+        ),
+      /different project/u
+    );
+
+    await assert.rejects(
+      fs.access(
+        join(
+          otherProject,
+          ".aurora"
+        )
+      )
+    );
+  }
+);
+
+test(
+  "downgraded project lock blocks official installation before mutation",
+  async context => {
+    const fixture =
+      await createLockedInstallFixture(
+        context
+      );
+
+    await new LockManager(
+      fixture.projectRoot
+    ).register(
+      "alpha",
+      "1.0.0"
+    );
+
+    await assertIntegrityFailure(
+      () =>
+        new OfficialRegistryPackageInstaller({
+          projectRoot:
+            fixture.projectRoot,
+          trust: {
+            requireSignatures:
+              false,
+          },
+        }).install(
+          fixture.locked
+        ),
+      /does not match.*aurora\.lock/u
+    );
+
+    await assert.rejects(
+      fs.access(
+        join(
+          fixture.projectRoot,
+          ".aurora"
+        )
+      )
+    );
+  }
+);
+
+test(
+  "post-lock manifest and artifact tampering fail before official installation mutation",
+  async context => {
+    await context.test(
+      "manifest",
+      async () => {
+        const fixture =
+          await createLockedInstallFixture(
+            context
+          );
+
+        await fs.appendFile(
+          fixture.locked.extracted
+            .manifestPath,
+          " "
+        );
+
+        await assertIntegrityFailure(
+          () =>
+            new OfficialRegistryPackageInstaller({
+              projectRoot:
+                fixture.projectRoot,
+              trust: {
+                requireSignatures:
+                  false,
+              },
+            }).install(
+              fixture.locked
+            ),
+          /manifest\.json.*digest/u
+        );
+
+        await assert.rejects(
+          fs.access(
+            join(
+              fixture.projectRoot,
+              ".aurora"
+            )
+          )
+        );
+      }
+    );
+
+    await context.test(
+      "artifact",
+      async () => {
+        const fixture =
+          await createLockedInstallFixture(
+            context
+          );
+
+        await fs.writeFile(
+          join(
+            fixture.locked.extracted
+              .packagePath,
+            "payload.txt"
+          ),
+          "tampered"
+        );
+
+        await assertIntegrityFailure(
+          () =>
+            new OfficialRegistryPackageInstaller({
+              projectRoot:
+                fixture.projectRoot,
+              trust: {
+                requireSignatures:
+                  false,
+              },
+            }).install(
+              fixture.locked
+            ),
+          /artifact verification|Digest mismatch/u
+        );
+
+        await assert.rejects(
+          fs.access(
+            join(
+              fixture.projectRoot,
+              ".aurora"
+            )
+          )
+        );
+      }
+    );
+  }
+);
+
+test(
+  "installed-state verification binds the complete official lock identity",
+  async context => {
+    const fixture =
+      await createLockedInstallFixture(
+        context
+      );
+
+    await new OfficialRegistryPackageInstaller({
+      projectRoot:
+        fixture.projectRoot,
+      trust: {
+        requireSignatures:
+          false,
+      },
+    }).install(
+      fixture.locked
+    );
+
+    const changed =
+      JSON.parse(
+        JSON.stringify(
+          fixture.locked.entry
+        )
+      );
+
+    changed.provenance.reference =
+      "alpha@rebuilt";
+
+    await new LockManager(
+      fixture.projectRoot
+    ).registerOfficial(
+      "alpha",
+      changed
+    );
+
+    await assertIntegrityFailure(
+      () =>
+        new InstalledStateVerifier()
+          .verify(
+            "alpha",
+            fixture.projectRoot
+          ),
+      /complete official registry lock identity/u
+    );
+
+    await new LockManager(
+      fixture.projectRoot
+    ).register(
+      "alpha",
+      "1.0.0"
+    );
+
+    await assertIntegrityFailure(
+      () =>
+        new InstalledStateVerifier()
+          .verify(
+            "alpha",
+            fixture.projectRoot
+          ),
+      /requires a full official registry lock/u
     );
   }
 );

@@ -197,6 +197,9 @@ export const PackageStateReceiptSchema =
     artifactSha256:
       Sha256Schema,
 
+    officialLockSha256:
+      Sha256Schema.optional(),
+
     installedAt:
       CanonicalTimestampSchema,
 

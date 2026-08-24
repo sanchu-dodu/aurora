@@ -64,6 +64,10 @@ import {
 } from "../lock/lockManager.js";
 
 import {
+  calculateOfficialRegistryLockEntryDigest,
+} from "../lock/lockSchema.js";
+
+import {
   getDefaultPackageRoot,
 } from "../packagePaths.js";
 
@@ -72,8 +76,20 @@ import {
 } from "../registry/registry.js";
 
 import {
+  loadVerifiedLockedOfficialRegistryManifest,
+} from "../registry/officialRegistryInstallIdentity.js";
+
+import type {
+  LockedOfficialRegistryPackage,
+} from "../registry/officialRegistryPackageLocker.js";
+
+import {
   PackageOwnershipRecorder,
 } from "../state/packageOwnershipRecorder.js";
+
+import {
+  parsePackageStateReceipt,
+} from "../state/packageStateSchema.js";
 
 import type {
   PackageStateReceipt,
@@ -149,7 +165,12 @@ export class PackageWorker {
     environmentProvider?:
       PackageEnvironmentValueProvider,
     private readonly networkBroker?:
-      PackageNetworkBroker
+      PackageNetworkBroker,
+    private readonly lockedOfficialPackages:
+      ReadonlyMap<
+        string,
+        LockedOfficialRegistryPackage
+      > = new Map()
   ) {
     this.capabilityPolicy =
       new PackageCapabilityPolicy(
@@ -188,10 +209,37 @@ export class PackageWorker {
         context.getProjectPath()
       );
 
-    const manifest =
-      await registry.getPackage(
-        packageId
+    const locked =
+      this.lockedOfficialPackages
+        .get(packageId);
+
+    if (
+      this.lockedOfficialPackages
+        .size > 0 &&
+      locked === undefined
+    ) {
+      throw new AuroraError(
+        `Package '${packageId}' reached official installation without an authentic verified lock receipt.`,
+        {
+          code:
+            ErrorCodes
+              .PACKAGE_INTEGRITY_FAILED,
+          suggestion:
+            "Reject the installation and materialize the complete authenticated lock set.",
+        }
       );
+    }
+
+    const manifest =
+      locked === undefined
+        ? await registry.getPackage(
+            packageId
+          )
+        : await loadVerifiedLockedOfficialRegistryManifest(
+            locked,
+            this.packageRoot,
+            context.getProjectPath()
+          );
 
     /*
      * Package trust is evaluated before the installed-cache
@@ -453,9 +501,20 @@ export class PackageWorker {
         )
       );
 
-    const ownershipReceipt =
+    const capturedOwnershipReceipt =
       await ownershipRecorder
         .finalize();
+
+    const ownershipReceipt =
+      locked === undefined
+        ? capturedOwnershipReceipt
+        : parsePackageStateReceipt({
+            ...capturedOwnershipReceipt,
+            officialLockSha256:
+              calculateOfficialRegistryLockEntryDigest(
+                locked.entry
+              ),
+          });
 
     /*
      * Explicit update and repair modes deliberately
@@ -507,10 +566,18 @@ export class PackageWorker {
         context.getProjectPath()
       );
 
-    await lock.register(
-      packageId,
-      manifest.version
-    );
+    if (locked === undefined) {
+      await lock.register(
+        packageId,
+        manifest.version
+      );
+    }
+    else {
+      await lock.registerOfficial(
+        packageId,
+        locked.entry
+      );
+    }
 
     const end =
       performance.now();

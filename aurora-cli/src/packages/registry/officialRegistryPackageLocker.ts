@@ -83,6 +83,7 @@ export interface OfficialRegistryPackageLockerOptions {
 export interface LockedOfficialRegistryPackage {
   readonly source:
     "verified-lock";
+  readonly projectRoot: string;
   readonly resolved:
     ResolvedOfficialRegistryPackage;
   readonly entry:
@@ -186,7 +187,7 @@ function createLockEntry(
   manifest:
     PackageManifest
 ): OfficialRegistryPackageLockEntry {
-  return Object.freeze(
+  return freezeJson(
     parseOfficialRegistryPackageLockEntry({
       lockVersion:
         1,
@@ -244,7 +245,29 @@ function createLockEntry(
   );
 }
 
+function freezeJson<T>(
+  value: T
+): Readonly<T> {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Object.isFrozen(value)
+  ) {
+    return value;
+  }
+
+  for (
+    const child
+    of Object.values(value)
+  ) {
+    freezeJson(child);
+  }
+
+  return Object.freeze(value);
+}
+
 function createLockedReceipt(
+  projectRoot: string,
   resolved:
     ResolvedOfficialRegistryPackage,
   entry:
@@ -257,6 +280,7 @@ function createLockedReceipt(
       Object.freeze({
         source:
           "verified-lock",
+        projectRoot,
         resolved,
         entry,
         extracted,
@@ -282,6 +306,9 @@ export function assertLockedOfficialRegistryPackage(
 }
 
 export class OfficialRegistryPackageLocker {
+  private readonly projectRoot:
+    string;
+
   private readonly registryResolver:
     OfficialRegistryResolver;
 
@@ -294,6 +321,11 @@ export class OfficialRegistryPackageLocker {
     options:
       OfficialRegistryPackageLockerOptions = {}
   ) {
+    this.projectRoot =
+      new ProjectPathBoundary(
+        projectRoot
+      ).projectRoot;
+
     this.registryResolver =
       new OfficialRegistryResolver(
         value,
@@ -302,7 +334,7 @@ export class OfficialRegistryPackageLocker {
 
     this.lockManager =
       new LockManager(
-        projectRoot
+        this.projectRoot
       );
 
     Object.freeze(this);
@@ -488,6 +520,7 @@ export class OfficialRegistryPackageLocker {
       }
 
       return createLockedReceipt(
+        this.projectRoot,
         resolved,
         entry,
         extracted

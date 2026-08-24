@@ -51,6 +51,14 @@ import {
 } from "../lifecycle/durableFileTransaction.js";
 
 import {
+  LockManager,
+} from "../lock/lockManager.js";
+
+import {
+  calculateOfficialRegistryLockEntryDigest,
+} from "../lock/lockSchema.js";
+
+import {
   LifecycleRecoveryManager,
 } from "../lifecycle/lifecycleRecoveryManager.js";
 
@@ -69,6 +77,18 @@ import {
 import {
   PackageRegistry,
 } from "../registry/registry.js";
+
+import {
+  loadVerifiedLockedOfficialRegistryManifest,
+} from "../registry/officialRegistryInstallIdentity.js";
+
+import {
+  assertLockedOfficialRegistryPackage,
+} from "../registry/officialRegistryPackageLocker.js";
+
+import type {
+  LockedOfficialRegistryPackage,
+} from "../registry/officialRegistryPackageLocker.js";
 
 import {
   PACKAGE_STATE_RELATIVE_PATH,
@@ -122,6 +142,16 @@ export interface PackageInstallerOptions {
    */
   environmentProvider?:
     PackageEnvironmentValueProvider;
+
+  /**
+   * Authentic project-bound official registry lock receipts.
+   *
+   * When present, every package selected by dependency
+   * resolution must have one of these receipts and the
+   * installer preserves the full official lock identity.
+   */
+  lockedOfficialPackages?:
+    readonly LockedOfficialRegistryPackage[];
 }
 
 function checkConflicts(
@@ -186,6 +216,12 @@ export class PackageInstaller {
   private readonly environmentProvider:
     PackageEnvironmentValueProvider | undefined;
 
+  private readonly lockedOfficialPackages:
+    ReadonlyMap<
+      string,
+      LockedOfficialRegistryPackage
+    >;
+
   constructor(
     options:
       PackageInstallerOptions = {}
@@ -209,6 +245,50 @@ export class PackageInstaller {
 
     this.environmentProvider =
       options.environmentProvider;
+
+    const lockedOfficialPackages =
+      new Map<
+        string,
+        LockedOfficialRegistryPackage
+      >();
+
+    for (
+      const locked
+      of options.lockedOfficialPackages ??
+        []
+    ) {
+      assertLockedOfficialRegistryPackage(
+        locked
+      );
+
+      const packageId =
+        locked.entry.packageId;
+
+      if (
+        lockedOfficialPackages.has(
+          packageId
+        )
+      ) {
+        throw new AuroraError(
+          `Official package '${packageId}' has more than one verified lock receipt.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_INTEGRITY_FAILED,
+            suggestion:
+              "Provide exactly one authentic project-bound lock receipt for each official package.",
+          }
+        );
+      }
+
+      lockedOfficialPackages.set(
+        packageId,
+        locked
+      );
+    }
+
+    this.lockedOfficialPackages =
+      lockedOfficialPackages;
   }
 
   async install(
@@ -220,6 +300,12 @@ export class PackageInstaller {
         this.packageRoot,
         new Set<string>(),
         this.trustPolicy
+      );
+
+    await this
+      .assertOfficialInstallSet(
+        packageId,
+        packages
       );
 
     const registry =
@@ -252,10 +338,20 @@ export class PackageInstaller {
     console.log("");
 
     for (const packageName of packages) {
+      const locked =
+        this.lockedOfficialPackages
+          .get(packageName);
+
       const manifest =
-        await registry.getPackage(
-          packageName
-        );
+        locked === undefined
+          ? await registry.getPackage(
+              packageName
+            )
+          : await loadVerifiedLockedOfficialRegistryManifest(
+              locked,
+              this.packageRoot,
+              this.projectRoot
+            );
 
       /*
        * Authenticate publisher authority before
@@ -383,7 +479,9 @@ export class PackageInstaller {
           this.executionPolicy,
           this.trustPolicy,
           undefined,
-          this.environmentProvider
+          this.environmentProvider,
+          undefined,
+          this.lockedOfficialPackages
         );
 
       const transaction =
@@ -494,6 +592,118 @@ export class PackageInstaller {
     finally {
       await lifecycleLock
         .release();
+    }
+  }
+
+  private async assertOfficialInstallSet(
+    requestedPackageId: string,
+    resolvedPackageIds:
+      readonly string[]
+  ): Promise<void> {
+    if (
+      this.lockedOfficialPackages
+        .size === 0
+    ) {
+      return;
+    }
+
+    if (
+      !this.lockedOfficialPackages
+        .has(requestedPackageId)
+    ) {
+      throw new AuroraError(
+        `Official installation request '${requestedPackageId}' does not have an authentic verified lock receipt.`,
+        {
+          code:
+            ErrorCodes
+              .PACKAGE_INTEGRITY_FAILED,
+          suggestion:
+            "Resolve, acquire, extract, and lock every official package before installation.",
+        }
+      );
+    }
+
+    const resolved =
+      new Set(
+        resolvedPackageIds
+      );
+
+    for (
+      const packageId
+      of resolved
+    ) {
+      if (
+        !this.lockedOfficialPackages
+          .has(packageId)
+      ) {
+        throw new AuroraError(
+          `Resolved dependency '${packageId}' does not have an authentic verified lock receipt.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_INTEGRITY_FAILED,
+            suggestion:
+              "Materialize an authenticated lock receipt for every dependency before installation.",
+          }
+        );
+      }
+    }
+
+    for (
+      const packageId
+      of this.lockedOfficialPackages
+        .keys()
+    ) {
+      if (!resolved.has(packageId)) {
+        throw new AuroraError(
+          `Verified lock receipt '${packageId}' is not part of the requested dependency graph.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_INTEGRITY_FAILED,
+            suggestion:
+              "Provide only the exact authenticated lock set selected for this installation.",
+          }
+        );
+      }
+    }
+
+    const lockFile =
+      await new LockManager(
+        this.projectRoot
+      ).read();
+
+    for (
+      const [
+        packageId,
+        locked,
+      ]
+      of this.lockedOfficialPackages
+    ) {
+      const persisted =
+        lockFile.packages[packageId];
+
+      if (
+        typeof persisted ===
+          "string" ||
+        calculateOfficialRegistryLockEntryDigest(
+          persisted
+        ) !==
+          calculateOfficialRegistryLockEntryDigest(
+            locked.entry
+          )
+      ) {
+        throw new AuroraError(
+          `Official package '${packageId}' does not match its project aurora.lock entry.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_INTEGRITY_FAILED,
+            suggestion:
+              "Restore the exact verified official lock entry before installation.",
+          }
+        );
+      }
     }
   }
 }
