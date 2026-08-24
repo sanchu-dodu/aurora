@@ -64,29 +64,79 @@ export class OfficialRegistryPackageInstaller {
     locked:
       LockedOfficialRegistryPackage
   ): Promise<void> {
+    await this.installSet(
+      locked,
+      []
+    );
+  }
+
+  async installSet(
+    requested:
+      LockedOfficialRegistryPackage,
+    dependencies:
+      readonly LockedOfficialRegistryPackage[]
+  ): Promise<void> {
     assertLockedOfficialRegistryPackage(
-      locked
+      requested
     );
 
-    if (
-      locked.projectRoot !==
-        this.projectRoot
+    const lockedOfficialPackages = [
+      requested,
+      ...dependencies,
+    ];
+
+    const packageIds =
+      new Set<string>();
+
+    for (
+      const locked
+      of lockedOfficialPackages
     ) {
-      throw new AuroraError(
-        `Official package '${locked.entry.packageId}' lock receipt belongs to a different project.`,
-        {
-          code:
-            ErrorCodes
-              .PACKAGE_INTEGRITY_FAILED,
-          suggestion:
-            "Lock the verified package for this exact project before installation.",
-        }
+      assertLockedOfficialRegistryPackage(
+        locked
+      );
+
+      if (
+        locked.projectRoot !==
+          this.projectRoot
+      ) {
+        throw new AuroraError(
+          `Official package '${locked.entry.packageId}' lock receipt belongs to a different project.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_INTEGRITY_FAILED,
+            suggestion:
+              "Lock every verified package for this exact project before installation.",
+          }
+        );
+      }
+
+      if (
+        packageIds.has(
+          locked.entry.packageId
+        )
+      ) {
+        throw new AuroraError(
+          `Official package '${locked.entry.packageId}' appears more than once in the requested install set.`,
+          {
+            code:
+              ErrorCodes
+                .PACKAGE_INTEGRITY_FAILED,
+            suggestion:
+              "Provide exactly one authentic lock receipt for every selected package.",
+          }
+        );
+      }
+
+      packageIds.add(
+        locked.entry.packageId
       );
     }
 
     await new PackageInstaller({
       packageRoot:
-        locked.extracted
+        requested.extracted
           .stagingPath,
       projectRoot:
         this.projectRoot,
@@ -99,10 +149,10 @@ export class OfficialRegistryPackageInstaller {
         this.options
           .environmentProvider,
       lockedOfficialPackages: [
-        locked,
+        ...lockedOfficialPackages,
       ],
     }).install(
-      locked.entry.packageId
+      requested.entry.packageId
     );
   }
 }

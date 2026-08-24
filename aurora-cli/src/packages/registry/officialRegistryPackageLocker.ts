@@ -92,6 +92,16 @@ export interface LockedOfficialRegistryPackage {
     ExtractedOfficialRegistryArtifact;
 }
 
+interface PreparedOfficialRegistryPackage {
+  readonly packageId: string;
+  readonly resolved:
+    ResolvedOfficialRegistryPackage;
+  readonly entry:
+    OfficialRegistryPackageLockEntry;
+  readonly extracted:
+    ExtractedOfficialRegistryArtifact;
+}
+
 function lockIntegrityFailure(
   packageId: string,
   message: string,
@@ -347,6 +357,140 @@ export class OfficialRegistryPackageLocker {
     Promise<
       LockedOfficialRegistryPackage
     > {
+    const prepared =
+      await this.prepare(
+        extracted
+      );
+
+    try {
+      await this.lockManager
+        .registerOfficial(
+          prepared.packageId,
+          prepared.entry
+        );
+
+      const persisted =
+        (
+          await this.lockManager
+            .read()
+        ).packages[
+          prepared.packageId
+        ];
+
+      this.assertPersistedEntry(
+        prepared,
+        persisted
+      );
+
+      return createLockedReceipt(
+        this.projectRoot,
+        prepared.resolved,
+        prepared.entry,
+        prepared.extracted
+      );
+    }
+    catch (error) {
+      if (
+        error instanceof AuroraError &&
+        error.code ===
+          ErrorCodes
+            .PACKAGE_INTEGRITY_FAILED
+      ) {
+        throw error;
+      }
+
+      throw lockIntegrityFailure(
+        prepared.packageId,
+        "the extracted package could not be safely bound to aurora.lock.",
+        error
+      );
+    }
+  }
+
+  async bindExistingSet(
+    extractedArtifacts:
+      readonly ExtractedOfficialRegistryArtifact[]
+  ): Promise<
+    readonly LockedOfficialRegistryPackage[]
+  > {
+    if (
+      !Array.isArray(
+        extractedArtifacts
+      ) ||
+      extractedArtifacts.length === 0
+    ) {
+      throw new TypeError(
+        "Expected at least one authentic extracted official registry artifact receipt."
+      );
+    }
+
+    const prepared:
+      PreparedOfficialRegistryPackage[] = [];
+
+    const packageIds =
+      new Set<string>();
+
+    for (
+      const extracted
+      of extractedArtifacts
+    ) {
+      const candidate =
+        await this.prepare(
+          extracted
+        );
+
+      if (
+        packageIds.has(
+          candidate.packageId
+        )
+      ) {
+        throw lockIntegrityFailure(
+          candidate.packageId,
+          "the extracted offline install set contains the same package more than once."
+        );
+      }
+
+      packageIds.add(
+        candidate.packageId
+      );
+      prepared.push(candidate);
+    }
+
+    const lockFile =
+      await this.lockManager
+        .read();
+
+    for (
+      const candidate
+      of prepared
+    ) {
+      this.assertPersistedEntry(
+        candidate,
+        lockFile.packages[
+          candidate.packageId
+        ]
+      );
+    }
+
+    return Object.freeze(
+      prepared.map(
+        candidate =>
+          createLockedReceipt(
+            this.projectRoot,
+            candidate.resolved,
+            candidate.entry,
+            candidate.extracted
+          )
+      )
+    );
+  }
+
+  private async prepare(
+    extracted:
+      ExtractedOfficialRegistryArtifact
+  ): Promise<
+    PreparedOfficialRegistryPackage
+  > {
     assertExtractedOfficialRegistryArtifact(
       extracted
     );
@@ -496,35 +640,12 @@ export class OfficialRegistryPackageLocker {
           manifest
         );
 
-      await this.lockManager
-        .registerOfficial(
-          packageId,
-          entry
-        );
-
-      const persisted =
-        (
-          await this.lockManager
-            .read()
-        ).packages[packageId];
-
-      if (
-        typeof persisted === "string" ||
-        JSON.stringify(persisted) !==
-          JSON.stringify(entry)
-      ) {
-        throw lockIntegrityFailure(
-          packageId,
-          "the verified official lock entry did not persist exactly."
-        );
-      }
-
-      return createLockedReceipt(
-        this.projectRoot,
+      return Object.freeze({
+        packageId,
         resolved,
         entry,
         extracted
-      );
+      });
     }
     catch (error) {
       if (
@@ -538,13 +659,36 @@ export class OfficialRegistryPackageLocker {
 
       throw lockIntegrityFailure(
         packageId,
-        "the extracted package could not be safely bound to aurora.lock.",
+        "the extracted package could not be safely prepared for lock verification.",
         error
       );
     }
     finally {
       await manifestHandle
         ?.close();
+    }
+  }
+
+  private assertPersistedEntry(
+    prepared:
+      PreparedOfficialRegistryPackage,
+    persisted:
+      | OfficialRegistryPackageLockEntry
+      | string
+      | undefined
+  ): void {
+    if (
+      typeof persisted === "string" ||
+      persisted === undefined ||
+      JSON.stringify(persisted) !==
+        JSON.stringify(
+          prepared.entry
+        )
+    ) {
+      throw lockIntegrityFailure(
+        prepared.packageId,
+        "the verified official lock entry does not match the exact persisted aurora.lock identity."
+      );
     }
   }
 }

@@ -61,6 +61,10 @@ import {
 } from "../../dist/packages/registry/officialRegistryPackageInstaller.js";
 
 import {
+  OfficialRegistryOfflinePackageInstaller,
+} from "../../dist/packages/registry/officialRegistryOfflinePackageInstaller.js";
+
+import {
   createOfficialRegistrySigningPayload,
 } from "../../dist/packages/registry/officialRegistrySigningPayload.js";
 
@@ -423,10 +427,16 @@ function createTar(
   return Buffer.concat(parts);
 }
 
-function createPackageArchive() {
+function createPackageArchive(
+  {
+    id = "alpha",
+    version = "1.0.0",
+    dependencies = [],
+  } = {}
+) {
   const payload =
     Buffer.from(
-      "lock-pinned payload"
+      `${id} lock-pinned payload`
     );
   const files = [
     {
@@ -441,9 +451,10 @@ function createPackageArchive() {
   const manifest =
     createManifestV1({
       id:
-        "alpha",
+        id,
       version:
-        "1.0.0",
+        version,
+      dependencies,
       files,
       artifact: {
         algorithm:
@@ -703,6 +714,307 @@ async function createLockedInstallFixture(
   return {
     ...fixture,
     locked,
+  };
+}
+
+function createRegistryEntry(
+  packageArchive
+) {
+  const {
+    id,
+    version,
+  } = packageArchive.manifest;
+
+  return {
+    packageId:
+      id,
+    version,
+    manifestDigest:
+      sha256(
+        packageArchive
+          .manifestBytes
+      ),
+    archive: {
+      algorithm:
+        "sha256",
+      digest:
+        sha256(
+          packageArchive.archive
+        ),
+      size:
+        packageArchive
+          .archive.byteLength,
+      url:
+        `https://registry.aurora.example/packages/${id}/${version}.tgz`,
+    },
+    provenance: {
+      type:
+        "build",
+      url:
+        "https://github.com/sanchu-dodu/aurora",
+      reference:
+        `${id}@${version}`,
+    },
+    lifecycle: {
+      status:
+        "active",
+    },
+  };
+}
+
+async function cacheArchive(
+  snapshot,
+  options,
+  quarantineRoot,
+  cacheRoot,
+  packageArchive
+) {
+  const packageId =
+    packageArchive
+      .manifest.id;
+
+  const acquired =
+    await new OfficialRegistryArtifactAcquirer(
+      snapshot,
+      {
+        registryOptions:
+          options,
+        quarantineRoot,
+        addressResolver: {
+          async lookup() {
+            return [
+              {
+                address:
+                  "93.184.216.34",
+                family:
+                  4,
+              },
+            ];
+          },
+        },
+        transport: {
+          async request(input) {
+            input.onResponseHead(
+              200,
+              [
+                {
+                  name:
+                    "Content-Length",
+                  value:
+                    String(
+                      packageArchive
+                        .archive
+                        .byteLength
+                    ),
+                },
+              ]
+            );
+            await input.onBodyChunk(
+              packageArchive.archive
+            );
+          },
+        },
+      }
+    ).acquire(
+      packageId,
+      {
+        kind:
+          "exact",
+        version:
+          packageArchive
+            .manifest.version,
+      }
+    );
+
+  return new OfficialRegistryArtifactCache(
+    snapshot,
+    cacheRoot,
+    {
+      registryOptions:
+        options,
+    }
+  ).store(acquired);
+}
+
+async function createOfflineInstallSetFixture(
+  context,
+  {
+    alphaDependencies = [
+      {
+        id:
+          "beta",
+        version:
+          "^1.0.0",
+        optional:
+          false,
+      },
+    ],
+    betaDependencies = [],
+  } = {}
+) {
+  const root =
+    await temporaryDirectory(
+      context,
+      "aurora-official-offline-install-"
+    );
+
+  const projectRoot =
+    join(root, "project");
+  const cacheRoot =
+    join(root, "cache");
+  const quarantineRoot =
+    join(root, "quarantine");
+  const lockingExtractionRoot =
+    join(
+      root,
+      "locking-extraction"
+    );
+  const offlineExtractionRoot =
+    join(
+      root,
+      "offline-extraction"
+    );
+
+  await Promise.all([
+    fs.mkdir(projectRoot),
+    fs.mkdir(cacheRoot),
+    fs.mkdir(quarantineRoot),
+    fs.mkdir(
+      lockingExtractionRoot
+    ),
+    fs.mkdir(
+      offlineExtractionRoot
+    ),
+  ]);
+
+  await fs.writeFile(
+    join(
+      projectRoot,
+      "package.json"
+    ),
+    `${JSON.stringify({
+      name:
+        "official-offline-install-project",
+      version:
+        "1.0.0",
+      private:
+        true,
+      dependencies: {},
+    })}\n`
+  );
+
+  const authority =
+    createAuthority();
+  const options =
+    registryOptions(authority);
+  const archives = {
+    alpha:
+      createPackageArchive({
+        id:
+          "alpha",
+        dependencies:
+          alphaDependencies,
+      }),
+    beta:
+      createPackageArchive({
+        id:
+          "beta",
+        dependencies:
+          betaDependencies,
+      }),
+  };
+  const snapshot =
+    signSnapshot(
+      authority,
+      Object.values(archives)
+        .map(createRegistryEntry)
+    );
+
+  const cached = {};
+
+  for (
+    const [
+      packageId,
+      packageArchive,
+    ]
+    of Object.entries(archives)
+  ) {
+    cached[packageId] =
+      await cacheArchive(
+        snapshot,
+        options,
+        quarantineRoot,
+        cacheRoot,
+        packageArchive
+      );
+  }
+
+  const extractor =
+    new OfficialRegistryArtifactExtractor(
+      snapshot,
+      lockingExtractionRoot,
+      {
+        registryOptions:
+          options,
+      }
+    );
+  const locker =
+    new OfficialRegistryPackageLocker(
+      snapshot,
+      projectRoot,
+      {
+        registryOptions:
+          options,
+      }
+    );
+  const originalExtractions = [];
+  const originalLocks = {};
+
+  for (
+    const packageId
+    of ["beta", "alpha"]
+  ) {
+    const extracted =
+      await extractor.extract(
+        cached[packageId]
+      );
+
+    originalExtractions.push(
+      extracted
+    );
+    originalLocks[packageId] =
+      await locker.lock(
+        extracted
+      );
+  }
+
+  for (
+    const extracted
+    of originalExtractions
+  ) {
+    await fs.rm(
+      extracted.stagingPath,
+      {
+        recursive:
+          true,
+        force:
+          true,
+      }
+    );
+  }
+
+  return {
+    root,
+    projectRoot,
+    cacheRoot,
+    quarantineRoot,
+    offlineExtractionRoot,
+    authority,
+    options,
+    archives,
+    snapshot,
+    cached,
+    originalLocks,
   };
 }
 
@@ -1660,6 +1972,396 @@ test(
             fixture.projectRoot
           ),
       /requires a full official registry lock/u
+    );
+  }
+);
+
+test(
+  "exact locked dependency sets install reproducibly from the verified offline cache",
+  async context => {
+    const fixture =
+      await createOfflineInstallSetFixture(
+        context
+      );
+
+    const before =
+      await new LockManager(
+        fixture.projectRoot
+      ).read();
+
+    await new OfficialRegistryOfflinePackageInstaller(
+      fixture.snapshot,
+      {
+        projectRoot:
+          fixture.projectRoot,
+        cacheRoot:
+          fixture.cacheRoot,
+        extractionRoot:
+          fixture.offlineExtractionRoot,
+        registryOptions:
+          fixture.options,
+        trust: {
+          requireSignatures:
+            false,
+        },
+      }
+    ).install("alpha");
+
+    const after =
+      await new LockManager(
+        fixture.projectRoot
+      ).read();
+
+    assert.deepEqual(
+      after,
+      before
+    );
+
+    await Promise.all([
+      new InstalledStateVerifier()
+        .verify(
+          "alpha",
+          fixture.projectRoot
+        ),
+      new InstalledStateVerifier()
+        .verify(
+          "beta",
+          fixture.projectRoot
+        ),
+    ]);
+
+    const installed =
+      JSON.parse(
+        await fs.readFile(
+          join(
+            fixture.projectRoot,
+            ".aurora",
+            "cache.json"
+          ),
+          "utf8"
+        )
+      );
+
+    assert.deepEqual(
+      Object.keys(installed)
+        .sort(),
+      ["alpha", "beta"]
+    );
+
+    assert.deepEqual(
+      await fs.readdir(
+        fixture.offlineExtractionRoot
+      ),
+      []
+    );
+  }
+);
+
+test(
+  "offline locked installation rejects a missing dependency archive before project mutation",
+  async context => {
+    const fixture =
+      await createOfflineInstallSetFixture(
+        context
+      );
+
+    await fs.rm(
+      fixture.cached.beta
+        .filePath
+    );
+
+    await assert.rejects(
+      () =>
+        new OfficialRegistryOfflinePackageInstaller(
+          fixture.snapshot,
+          {
+            projectRoot:
+              fixture.projectRoot,
+            cacheRoot:
+              fixture.cacheRoot,
+            extractionRoot:
+              fixture.offlineExtractionRoot,
+            registryOptions:
+              fixture.options,
+            trust: {
+              requireSignatures:
+                false,
+            },
+          }
+        ).install("alpha"),
+      error => {
+        assert.equal(
+          error.code,
+          ErrorCodes
+            .PACKAGE_ARTIFACT_CACHE_FAILED
+        );
+        assert.match(
+          error.message,
+          /beta@1\.0\.0.*offline cache/u
+        );
+        return true;
+      }
+    );
+
+    await assert.rejects(
+      fs.access(
+        join(
+          fixture.projectRoot,
+          ".aurora"
+        )
+      )
+    );
+
+    assert.deepEqual(
+      await fs.readdir(
+        fixture.offlineExtractionRoot
+      ),
+      []
+    );
+  }
+);
+
+test(
+  "offline install cleans authenticated extraction staging when publisher trust rejects the package",
+  async context => {
+    const fixture =
+      await createOfflineInstallSetFixture(
+        context
+      );
+
+    await assert.rejects(
+      () =>
+        new OfficialRegistryOfflinePackageInstaller(
+          fixture.snapshot,
+          {
+            projectRoot:
+              fixture.projectRoot,
+            cacheRoot:
+              fixture.cacheRoot,
+            extractionRoot:
+              fixture.offlineExtractionRoot,
+            registryOptions:
+              fixture.options,
+          }
+        ).install("alpha"),
+      error => {
+        assert.equal(
+          error.code,
+          ErrorCodes
+            .PACKAGE_SIGNATURE_REQUIRED
+        );
+        return true;
+      }
+    );
+
+    assert.deepEqual(
+      await fs.readdir(
+        fixture.offlineExtractionRoot
+      ),
+      []
+    );
+
+    await assert.rejects(
+      fs.access(
+        join(
+          fixture.projectRoot,
+          ".aurora"
+        )
+      )
+    );
+  }
+);
+
+test(
+  "offline install rejects dependency cycles before project mutation and cleans every staging root",
+  async context => {
+    const fixture =
+      await createOfflineInstallSetFixture(
+        context,
+        {
+          betaDependencies: [
+            {
+              id:
+                "alpha",
+              version:
+                "^1.0.0",
+              optional:
+                false,
+            },
+          ],
+        }
+      );
+
+    await assert.rejects(
+      () =>
+        new OfficialRegistryOfflinePackageInstaller(
+          fixture.snapshot,
+          {
+            projectRoot:
+              fixture.projectRoot,
+            cacheRoot:
+              fixture.cacheRoot,
+            extractionRoot:
+              fixture.offlineExtractionRoot,
+            registryOptions:
+              fixture.options,
+            trust: {
+              requireSignatures:
+                false,
+            },
+          }
+        ).install("alpha"),
+      error => {
+        assert.equal(
+          error.code,
+          ErrorCodes
+            .PACKAGE_INCOMPATIBLE
+        );
+        assert.match(
+          error.message,
+          /dependency graph contains a cycle/u
+        );
+        return true;
+      }
+    );
+
+    assert.deepEqual(
+      await fs.readdir(
+        fixture.offlineExtractionRoot
+      ),
+      []
+    );
+
+    await assert.rejects(
+      fs.access(
+        join(
+          fixture.projectRoot,
+          ".aurora"
+        )
+      )
+    );
+  }
+);
+
+test(
+  "offline install binds cached artifacts to the complete pre-existing lock identity",
+  async context => {
+    const fixture =
+      await createOfflineInstallSetFixture(
+        context
+      );
+
+    const changed =
+      JSON.parse(
+        JSON.stringify(
+          fixture.originalLocks
+            .beta.entry
+        )
+      );
+
+    changed.provenance.reference =
+      "beta@different-build";
+
+    await new LockManager(
+      fixture.projectRoot
+    ).registerOfficial(
+      "beta",
+      changed
+    );
+
+    await assertIntegrityFailure(
+      () =>
+        new OfficialRegistryOfflinePackageInstaller(
+          fixture.snapshot,
+          {
+            projectRoot:
+              fixture.projectRoot,
+            cacheRoot:
+              fixture.cacheRoot,
+            extractionRoot:
+              fixture.offlineExtractionRoot,
+            registryOptions:
+              fixture.options,
+            trust: {
+              requireSignatures:
+                false,
+            },
+          }
+        ).install("alpha"),
+      /does not match.*aurora\.lock identity/u
+    );
+
+    await assert.rejects(
+      fs.access(
+        join(
+          fixture.projectRoot,
+          ".aurora"
+        )
+      )
+    );
+  }
+);
+
+test(
+  "offline install rejects a locked dependency outside the authenticated manifest range",
+  async context => {
+    const fixture =
+      await createOfflineInstallSetFixture(
+        context,
+        {
+          alphaDependencies: [
+            {
+              id:
+                "beta",
+              version:
+                "^2.0.0",
+              optional:
+                false,
+            },
+          ],
+        }
+      );
+
+    await assert.rejects(
+      () =>
+        new OfficialRegistryOfflinePackageInstaller(
+          fixture.snapshot,
+          {
+            projectRoot:
+              fixture.projectRoot,
+            cacheRoot:
+              fixture.cacheRoot,
+            extractionRoot:
+              fixture.offlineExtractionRoot,
+            registryOptions:
+              fixture.options,
+            trust: {
+              requireSignatures:
+                false,
+            },
+          }
+        ).install("alpha"),
+      error => {
+        assert.equal(
+          error.code,
+          ErrorCodes
+            .PACKAGE_INCOMPATIBLE
+        );
+        assert.match(
+          error.message,
+          /requires 'beta' \^2\.0\.0.*selects 1\.0\.0/u
+        );
+        return true;
+      }
+    );
+
+    await assert.rejects(
+      fs.access(
+        join(
+          fixture.projectRoot,
+          ".aurora"
+        )
+      )
     );
   }
 );

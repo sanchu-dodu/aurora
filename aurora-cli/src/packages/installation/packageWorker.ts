@@ -213,6 +213,12 @@ export class PackageWorker {
       this.lockedOfficialPackages
         .get(packageId);
 
+    const effectivePackageRoot =
+      locked === undefined
+        ? this.packageRoot
+        : locked.extracted
+            .stagingPath;
+
     if (
       this.lockedOfficialPackages
         .size > 0 &&
@@ -237,7 +243,7 @@ export class PackageWorker {
           )
         : await loadVerifiedLockedOfficialRegistryManifest(
             locked,
-            this.packageRoot,
+            effectivePackageRoot,
             context.getProjectPath()
           );
 
@@ -282,7 +288,7 @@ export class PackageWorker {
       new PackageArtifactVerifier();
 
     await verifier.verify(
-      this.packageRoot,
+      effectivePackageRoot,
       manifest
     );
 
@@ -420,7 +426,7 @@ export class PackageWorker {
     if (hookDeclaration) {
       await executionHost.run(
         manifest,
-        this.packageRoot,
+        effectivePackageRoot,
         hookDeclaration.path,
         "beforeInstall",
         packageContext
@@ -431,7 +437,7 @@ export class PackageWorker {
       const result =
         await executionHost.run(
           manifest,
-          this.packageRoot,
+          effectivePackageRoot,
           installerDeclaration.path,
           "install",
           packageContext
@@ -476,14 +482,14 @@ export class PackageWorker {
       await installTemplates(
         manifest,
         packageContext,
-        this.packageRoot
+        effectivePackageRoot
       );
     }
 
     if (hookDeclaration) {
       await executionHost.run(
         manifest,
-        this.packageRoot,
+        effectivePackageRoot,
         hookDeclaration.path,
         "afterInstall",
         packageContext

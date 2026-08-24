@@ -295,12 +295,18 @@ export class PackageInstaller {
     packageId: string
   ): Promise<void> {
     const packages =
-      await resolveDependencies(
-        packageId,
-        this.packageRoot,
-        new Set<string>(),
-        this.trustPolicy
-      );
+      this.lockedOfficialPackages
+          .size === 0
+        ? await resolveDependencies(
+            packageId,
+            this.packageRoot,
+            new Set<string>(),
+            this.trustPolicy
+          )
+        : await this
+            .resolveLockedOfficialDependencies(
+              packageId
+            );
 
     await this
       .assertOfficialInstallSet(
@@ -342,6 +348,12 @@ export class PackageInstaller {
         this.lockedOfficialPackages
           .get(packageName);
 
+      const effectivePackageRoot =
+        locked === undefined
+          ? this.packageRoot
+          : locked.extracted
+              .stagingPath;
+
       const manifest =
         locked === undefined
           ? await registry.getPackage(
@@ -349,7 +361,7 @@ export class PackageInstaller {
             )
           : await loadVerifiedLockedOfficialRegistryManifest(
               locked,
-              this.packageRoot,
+              effectivePackageRoot,
               this.projectRoot
             );
 
@@ -367,7 +379,7 @@ export class PackageInstaller {
       );
 
       await verifier.verify(
-        this.packageRoot,
+        effectivePackageRoot,
         manifest
       );
 
@@ -593,6 +605,157 @@ export class PackageInstaller {
       await lifecycleLock
         .release();
     }
+  }
+
+  private async resolveLockedOfficialDependencies(
+    requestedPackageId: string
+  ): Promise<string[]> {
+    const resolved =
+      new Map<
+        string,
+        PackageManifest
+      >();
+
+    const visiting =
+      new Set<string>();
+
+    const installationOrder:
+      string[] = [];
+
+    const visit =
+      async (
+        packageId: string
+      ): Promise<PackageManifest> => {
+        const existing =
+          resolved.get(packageId);
+
+        if (existing !== undefined) {
+          return existing;
+        }
+
+        if (visiting.has(packageId)) {
+          throw new AuroraError(
+            `Official package dependency graph contains a cycle through '${packageId}'.`,
+            {
+              code:
+                ErrorCodes
+                  .PACKAGE_INCOMPATIBLE,
+              suggestion:
+                "Publish an acyclic authenticated dependency graph before installation.",
+            }
+          );
+        }
+
+        const locked =
+          this.lockedOfficialPackages
+            .get(packageId);
+
+        if (locked === undefined) {
+          throw new AuroraError(
+            `Resolved dependency '${packageId}' does not have an authentic verified lock receipt.`,
+            {
+              code:
+                ErrorCodes
+                  .PACKAGE_INTEGRITY_FAILED,
+              suggestion:
+                "Materialize the exact authenticated lock receipt for every required dependency before installation.",
+            }
+          );
+        }
+
+        visiting.add(packageId);
+
+        const manifest =
+          await loadVerifiedLockedOfficialRegistryManifest(
+            locked,
+            locked.extracted
+              .stagingPath,
+            this.projectRoot
+          );
+
+        /*
+         * Dependency declarations are executable supply-chain
+         * decisions. Authenticate the publisher before using
+         * any declaration to expand the locked install set.
+         */
+        this.trustPolicy.verify(
+          manifest
+        );
+
+        for (
+          const dependency
+          of manifest.dependencies
+        ) {
+          const dependencyLocked =
+            this.lockedOfficialPackages
+              .get(dependency.id);
+
+          if (
+            dependencyLocked ===
+              undefined &&
+            dependency.optional
+          ) {
+            continue;
+          }
+
+          if (
+            dependencyLocked ===
+              undefined
+          ) {
+            throw new AuroraError(
+              `Official package '${packageId}' requires locked dependency '${dependency.id}' ${dependency.version}.`,
+              {
+                code:
+                  ErrorCodes
+                    .PACKAGE_INTEGRITY_FAILED,
+                suggestion:
+                  "Restore the complete authenticated dependency lock set before installation.",
+              }
+            );
+          }
+
+          const dependencyManifest =
+            await visit(
+              dependency.id
+            );
+
+          if (
+            !satisfiesManifestVersionRange(
+              dependencyManifest
+                .version,
+              dependency.version
+            )
+          ) {
+            throw new AuroraError(
+              `Official package '${packageId}' requires '${dependency.id}' ${dependency.version}, but the authenticated lock selects ${dependencyManifest.version}.`,
+              {
+                code:
+                  ErrorCodes
+                    .PACKAGE_INCOMPATIBLE,
+                suggestion:
+                  "Regenerate the lockfile from a dependency set that satisfies every authenticated manifest constraint.",
+              }
+            );
+          }
+        }
+
+        visiting.delete(packageId);
+        resolved.set(
+          packageId,
+          manifest
+        );
+        installationOrder.push(
+          packageId
+        );
+
+        return manifest;
+      };
+
+    await visit(
+      requestedPackageId
+    );
+
+    return installationOrder;
   }
 
   private async assertOfficialInstallSet(
