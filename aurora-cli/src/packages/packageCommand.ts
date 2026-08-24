@@ -114,11 +114,15 @@ export async function packageTreeCommand(
 }
 
 export async function packagePublishCommand(
-  packageId: string
+  packageId: string,
+  options: {
+    readonly dryRun?: boolean;
+  } = {}
 ): Promise<void> {
 
   await publishPackage(
-    packageId
+    packageId,
+    options
   );
 
 }

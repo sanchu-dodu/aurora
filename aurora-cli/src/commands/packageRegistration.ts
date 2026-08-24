@@ -182,13 +182,30 @@ registerCommand({
 
     pkg
       .command("publish")
-      .description("Publish a package")
+      .description(
+        "Build a verified local package publication bundle"
+      )
       .argument("<package>")
+      .option(
+        "--dry-run",
+        "Verify and preview the bundle without writing files"
+      )
       .action(
-        async (packageId: string) => {
+        async (
+          packageId: string,
+          options: {
+            readonly dryRun?:
+              boolean;
+          }
+        ) => {
 
           await packagePublishCommand(
-            packageId
+            packageId,
+            {
+              dryRun:
+                options.dryRun ===
+                  true,
+            }
           );
 
         }
