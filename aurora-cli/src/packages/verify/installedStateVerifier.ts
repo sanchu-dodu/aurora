@@ -28,6 +28,14 @@ import {
   LockManager,
 } from "../lock/lockManager.js";
 
+import type {
+  PackageLockEntry,
+} from "../lock/lockSchema.js";
+
+import {
+  calculateOfficialRegistryLockEntryDigest,
+} from "../lock/lockSchema.js";
+
 import {
   parsePackageStateReceipt,
 } from "../state/packageStateSchema.js";
@@ -103,13 +111,13 @@ export class InstalledStateVerifier {
           projectPath
         ).read();
 
-      const lockedVersion =
+      const lockedEntry =
         lockFile.packages[
           packageId
         ];
 
       if (
-        lockedVersion ===
+        lockedEntry ===
         undefined
       ) {
         throw integrityFailure(
@@ -118,15 +126,11 @@ export class InstalledStateVerifier {
         );
       }
 
-      if (
-        lockedVersion !==
-        receipt.version
-      ) {
-        throw integrityFailure(
-          packageId,
-          `Locked version '${lockedVersion}' does not match ownership receipt version '${receipt.version}'.`
-        );
-      }
+      assertLockMatchesReceipt(
+        packageId,
+        lockedEntry,
+        receipt
+      );
 
       for (
         const ownedFile
@@ -433,13 +437,13 @@ export class InstalledStateVerifier {
           projectPath
         ).read();
 
-      const lockedVersion =
+      const lockedEntry =
         lockFile.packages[
           packageId
         ];
 
       if (
-        lockedVersion ===
+        lockedEntry ===
           undefined
       ) {
         throw integrityFailure(
@@ -448,15 +452,11 @@ export class InstalledStateVerifier {
         );
       }
 
-      if (
-        lockedVersion !==
-          receipt.version
-      ) {
-        throw integrityFailure(
-          packageId,
-          `Locked version '${lockedVersion}' does not match ownership receipt version '${receipt.version}'.`
-        );
-      }
+      assertLockMatchesReceipt(
+        packageId,
+        lockedEntry,
+        receipt
+      );
 
       for (
         const ownedFile
@@ -701,6 +701,64 @@ function fileChangedWhileReading(
     before.ctimeMs !==
       after.ctimeMs
   );
+}
+
+function assertLockMatchesReceipt(
+  packageId: string,
+  lockedEntry:
+    PackageLockEntry,
+  receipt:
+    PackageStateReceipt
+): void {
+  if (
+    typeof lockedEntry ===
+      "string"
+  ) {
+    if (
+      receipt.officialLockSha256 !==
+        undefined
+    ) {
+      throw integrityFailure(
+        packageId,
+        "The installed ownership receipt requires a full official registry lock, but aurora.lock contains only a version string."
+      );
+    }
+
+    if (
+      lockedEntry !==
+        receipt.version
+    ) {
+      throw integrityFailure(
+        packageId,
+        `Locked version '${lockedEntry}' does not match ownership receipt version '${receipt.version}'.`
+      );
+    }
+
+    return;
+  }
+
+  if (
+    receipt.officialLockSha256 ===
+      undefined ||
+    calculateOfficialRegistryLockEntryDigest(
+      lockedEntry
+    ) !==
+      receipt.officialLockSha256 ||
+    lockedEntry.packageId !==
+      receipt.id ||
+    lockedEntry.version !==
+      receipt.version ||
+    lockedEntry.publisher.id !==
+      receipt.publisherId ||
+    lockedEntry.packageArtifact
+      .digest !==
+      receipt.artifactSha256
+  ) {
+    throw integrityFailure(
+      packageId,
+      "The complete official registry lock identity does not match the installed ownership receipt."
+    );
+  }
 }
 
 function integrityFailure(
