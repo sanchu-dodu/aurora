@@ -463,10 +463,14 @@ test(
     );
 
     assert.equal(
-      stored.filePath,
-      expectedCacheFile(
-        workspace.cacheRoot,
-        body
+      await fs.realpath(
+        stored.filePath
+      ),
+      await fs.realpath(
+        expectedCacheFile(
+          workspace.cacheRoot,
+          body
+        )
       )
     );
 
