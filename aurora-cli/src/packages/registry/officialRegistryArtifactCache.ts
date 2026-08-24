@@ -301,21 +301,6 @@ async function openRegularFile(
   packageId: string,
   label: string
 ): Promise<fs.FileHandle> {
-  const information =
-    await fs.lstat(
-      file
-    );
-
-  if (
-    information.isSymbolicLink() ||
-    !information.isFile()
-  ) {
-    throw cacheIntegrityFailure(
-      packageId,
-      `${label} is not a regular file.`
-    );
-  }
-
   const handle =
     await fs.open(
       file,
@@ -327,11 +312,31 @@ async function openRegularFile(
     );
 
   try {
-    const openedInformation =
-      await handle.stat();
+    const [
+      openedInformation,
+      information,
+    ] =
+      await Promise.all(
+        [
+          handle.stat(),
+          fs.lstat(
+            file
+          ),
+        ]
+      );
 
     if (
-      !openedInformation.isFile() ||
+      information.isSymbolicLink() ||
+      !information.isFile() ||
+      !openedInformation.isFile()
+    ) {
+      throw cacheIntegrityFailure(
+        packageId,
+        `${label} is not a regular file.`
+      );
+    }
+
+    if (
       openedInformation.dev !==
         information.dev ||
       openedInformation.ino !==
