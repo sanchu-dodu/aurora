@@ -113,6 +113,17 @@ Aurora packages use a strict, versioned trust contract. Before installation, Aur
 
 See [Package Manifest v1](docs/package-manifest-v1.md) for the complete format, capability list, and digest algorithm.
 
+## Verified publication bundles
+
+`aurora package publish <package>` prepares a local publication bundle under `.aurora/publications`. Use `--dry-run` to authenticate, verify, and preview the content-addressed archive identity without writing files. Aurora authenticates the package publisher, verifies the strict manifest and complete declared file inventory, and then creates a deterministic POSIX ustar archive inside a normalized gzip envelope.
+
+Every bundle is stored by its SHA-256 archive digest and contains only:
+
+- `package.tar.gz`, with the exact authenticated manifest and declared package files
+- `publication.json`, a canonical receipt binding package, version, publisher, signature key, manifest digest, artifact digest, provenance, archive size, and archive digest
+
+An identical command reuses only an exact existing bundle. Aurora refuses to overwrite mismatched content at a content-addressed path. This command does not upload an artifact, mutate the official registry, or access a private signing key; those remain separate release-authority steps.
+
 ## Extension worker prototype
 
 The bundled Hello extension runs outside the main Aurora process through the Extension Worker v1 prototype. Aurora validates a strict manifest, scrubs inherited environment data, brokers declared capabilities, and enforces time, memory, output, and per-extension concurrency limits.
