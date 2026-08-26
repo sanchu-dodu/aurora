@@ -16,6 +16,7 @@ import {
   packageTreeCommand,
   packagePublishCommand,
   packageProposeReleaseCommand,
+  packageFinalizeReleaseCommand,
 } from "../packages/packageCommand.js";
 
 registerCommand({
@@ -203,6 +204,56 @@ registerCommand({
           await packagePublishCommand(
             packageId,
             {
+              dryRun:
+                options.dryRun ===
+                  true,
+            }
+          );
+
+        }
+      );
+
+    pkg
+      .command("finalize-release")
+      .description(
+        "Verify an offline signature and finalize an immutable official registry release"
+      )
+      .argument(
+        "<proposal>",
+        "Content-addressed registry proposal directory"
+      )
+      .requiredOption(
+        "--registry-history <file>",
+        "Signed registry snapshots ordered from genesis to current"
+      )
+      .requiredOption(
+        "--signature <file>",
+        "Canonical offline Ed25519 signature file"
+      )
+      .option(
+        "--dry-run",
+        "Verify the signed successor without writing files"
+      )
+      .action(
+        async (
+          proposalPath: string,
+          options: {
+            readonly registryHistory:
+              string;
+            readonly signature:
+              string;
+            readonly dryRun?:
+              boolean;
+          }
+        ) => {
+
+          await packageFinalizeReleaseCommand(
+            proposalPath,
+            {
+              registryHistory:
+                options.registryHistory,
+              signature:
+                options.signature,
               dryRun:
                 options.dryRun ===
                   true,

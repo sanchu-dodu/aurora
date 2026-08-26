@@ -137,6 +137,14 @@ Use `--dry-run` to preview the exact sequence and signing-payload digest without
 
 The command never reads a private key, creates a signature, uploads an artifact, or mutates the live registry. After an authorized offline signer supplies `signature.value`, the normal official-registry verifier must authenticate the signed successor against its verified predecessor before distribution.
 
+## Verified registry release finalization
+
+`aurora package finalize-release <proposal>` completes the offline half of the registry release ceremony without bringing the registry private key into Aurora. The command requires `--registry-history <file>` and `--signature <file>`. The signature file must contain exactly one canonical unpadded base64url Ed25519 signature followed by one LF.
+
+Aurora re-verifies the complete current history, requires the proposal directory to contain only its canonical `proposal.json` and exact `registry-signing-payload.bin`, reconstructs the unsigned snapshot, and verifies that the proposal still advances from the current authenticated predecessor. It then imports the signature, runs the normal official-registry verifier over the signed successor, and refuses stale proposals, altered payloads, wrong-key signatures, unexpected fields, and noncanonical encodings.
+
+Use `--dry-run` to authenticate the complete result without writing it. A committed release is stored immutably under `.aurora/registry-releases/<sequence>/<verified-snapshot-digest>/snapshot.json`; an identical rerun reuses only the exact existing bytes. Finalization never signs, reads a private key, uploads an artifact, overwrites registry history, or changes a live registry pointer. Distribution and activation remain separate authorized operations.
+
 ## Extension worker prototype
 
 The bundled Hello extension runs outside the main Aurora process through the Extension Worker v1 prototype. Aurora validates a strict manifest, scrubs inherited environment data, brokers declared capabilities, and enforces time, memory, output, and per-extension concurrency limits.

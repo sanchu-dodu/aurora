@@ -36,6 +36,15 @@ import {
 } from "../../dist/packages/registry/officialRegistryReleaseCommand.js";
 
 import {
+  finalizeOfficialRegistryRelease,
+} from "../../dist/packages/registry/officialRegistryReleaseFinalizationCommand.js";
+
+import {
+  OfficialRegistryReleaseFinalizer,
+  OfficialRegistryReleaseWriter,
+} from "../../dist/packages/registry/officialRegistryReleaseFinalizer.js";
+
+import {
   compareOfficialRegistryPackageEntries,
 } from "../../dist/packages/registry/officialRegistrySchema.js";
 
@@ -1094,6 +1103,634 @@ test(
         error.code ===
           ErrorCodes
             .REGISTRY_RELEASE_PROPOSAL_FAILED
+    );
+  }
+);
+
+async function createFinalizationFixture(
+  context
+) {
+  const fixture =
+    await createPublication(
+      context
+    );
+
+  const registryAuthority =
+    createAuthority();
+
+  const trustStore =
+    new PackageTrustStore([
+      {
+        id:
+          AURORA_OFFICIAL_PUBLISHER_ID,
+        status:
+          "trusted",
+        keys: [
+          {
+            algorithm:
+              "ed25519",
+            publicKey:
+              registryAuthority
+                .publicKey,
+            status:
+              "trusted",
+          },
+        ],
+      },
+    ]);
+
+  const registryVerifierOptions = {
+    trustStore,
+  };
+
+  const genesisSnapshot =
+    signRegistrySnapshot(
+      registryAuthority,
+      {
+        packages: [
+          createRegistryEntry(
+            "alpha",
+            "1.0.0"
+          ),
+        ],
+      }
+    );
+
+  const predecessor =
+    new OfficialRegistryVerifier(
+      registryVerifierOptions
+    ).verify(
+      genesisSnapshot
+    );
+
+  const proposal =
+    buildProposal(
+      predecessor,
+      fixture.publication,
+      registryAuthority
+    );
+
+  const writtenProposal =
+    await new OfficialRegistryReleaseProposalWriter({
+      workspaceRoot:
+        fixture.workspaceRoot,
+    }).write(
+      proposal
+    );
+
+  const signatureValue =
+    sign(
+      null,
+      proposal.signingPayloadBytes(),
+      registryAuthority.privateKey
+    ).toString(
+      "base64url"
+    );
+
+  const historyPath =
+    join(
+      fixture.workspaceRoot,
+      "registry-history.json"
+    );
+
+  const signaturePath =
+    join(
+      fixture.workspaceRoot,
+      "registry-signature.txt"
+    );
+
+  await Promise.all([
+    fs.writeFile(
+      historyPath,
+      `${JSON.stringify([
+        genesisSnapshot,
+      ])}\n`,
+      "utf8"
+    ),
+    fs.writeFile(
+      signaturePath,
+      `${signatureValue}\n`,
+      "utf8"
+    ),
+  ]);
+
+  return {
+    ...fixture,
+    registryAuthority,
+    registryVerifierOptions,
+    genesisSnapshot,
+    predecessor,
+    proposal,
+    writtenProposal,
+    signatureValue,
+    historyPath,
+    signaturePath,
+  };
+}
+
+test(
+  "finalization command reverifies history, previews without writing, and emits one verified immutable snapshot",
+  async context => {
+    const fixture =
+      await createFinalizationFixture(
+        context
+      );
+
+    const proposalRelative =
+      fixture.writtenProposal
+        .proposalPath
+        .slice(
+          fixture.workspaceRoot
+            .length + 1
+        );
+
+    const dependencies = {
+      workspaceRoot:
+        fixture.workspaceRoot,
+      registryVerifierOptions:
+        fixture.registryVerifierOptions,
+    };
+
+    const preview =
+      await finalizeOfficialRegistryRelease(
+        proposalRelative,
+        {
+          registryHistory:
+            "registry-history.json",
+          signature:
+            "registry-signature.txt",
+          dryRun:
+            true,
+        },
+        dependencies
+      );
+
+    assert.equal(
+      preview.written,
+      undefined
+    );
+
+    assert.equal(
+      preview.release.snapshot.sequence,
+      2
+    );
+
+    await assert.rejects(
+      fs.access(
+        join(
+          fixture.workspaceRoot,
+          ".aurora",
+          "registry-releases"
+        )
+      )
+    );
+
+    const finalized =
+      await finalizeOfficialRegistryRelease(
+        proposalRelative,
+        {
+          registryHistory:
+            "registry-history.json",
+          signature:
+            "registry-signature.txt",
+        },
+        dependencies
+      );
+
+    const persisted =
+      JSON.parse(
+        await fs.readFile(
+          finalized.written
+            .snapshotFile,
+          "utf8"
+        )
+      );
+
+    const independentlyVerified =
+      new OfficialRegistryVerifier(
+        fixture
+          .registryVerifierOptions
+      ).verify(
+        persisted,
+        fixture.predecessor
+      );
+
+    assert.equal(
+      independentlyVerified.digest,
+      finalized.release.digest
+    );
+
+    assert.deepEqual(
+      persisted,
+      finalized.release.snapshot
+    );
+
+    assert.deepEqual(
+      await fs.readdir(
+        finalized.written
+          .releasePath
+      ),
+      [
+        "snapshot.json",
+      ]
+    );
+  }
+);
+
+test(
+  "finalizer accepts only the exact canonical proposal, payload, predecessor, and trusted signature",
+  async context => {
+    const fixture =
+      await createFinalizationFixture(
+        context
+      );
+
+    const finalizer =
+      new OfficialRegistryReleaseFinalizer({
+        registryVerifierOptions:
+          fixture
+            .registryVerifierOptions,
+      });
+
+    const first =
+      finalizer.finalize(
+        fixture.predecessor,
+        fixture.proposal.document,
+        fixture.proposal.proposalBytes(),
+        fixture.proposal
+          .signingPayloadBytes(),
+        fixture.signatureValue
+      );
+
+    const second =
+      finalizer.finalize(
+        fixture.predecessor,
+        fixture.proposal.document,
+        fixture.proposal.proposalBytes(),
+        fixture.proposal
+          .signingPayloadBytes(),
+        fixture.signatureValue
+      );
+
+    assert.equal(
+      first.digest,
+      second.digest
+    );
+
+    assert.deepEqual(
+      first.snapshotBytes(),
+      second.snapshotBytes()
+    );
+
+    assert.throws(
+      () =>
+        finalizer.finalize(
+          {
+            ...fixture.predecessor,
+          },
+          fixture.proposal.document,
+          fixture.proposal.proposalBytes(),
+          fixture.proposal
+            .signingPayloadBytes(),
+          fixture.signatureValue
+        ),
+      error =>
+        error.code ===
+          ErrorCodes
+            .REGISTRY_RELEASE_FINALIZATION_FAILED
+    );
+
+    assert.throws(
+      () =>
+        finalizer.finalize(
+          fixture.predecessor,
+          fixture.proposal.document,
+          fixture.proposal.proposalBytes(),
+          Buffer.from(
+            "wrong payload",
+            "utf8"
+          ),
+          fixture.signatureValue
+        ),
+      /signing payload does not exactly match/u
+    );
+
+    const wrongAuthority =
+      createAuthority();
+
+    const wrongSignature =
+      sign(
+        null,
+        fixture.proposal
+          .signingPayloadBytes(),
+        wrongAuthority.privateKey
+      ).toString(
+        "base64url"
+      );
+
+    assert.throws(
+      () =>
+        finalizer.finalize(
+          fixture.predecessor,
+          fixture.proposal.document,
+          fixture.proposal.proposalBytes(),
+          fixture.proposal
+            .signingPayloadBytes(),
+          wrongSignature
+        ),
+      error =>
+        error.code ===
+          ErrorCodes
+            .REGISTRY_RELEASE_FINALIZATION_FAILED
+    );
+  }
+);
+
+test(
+  "finalizer rejects stale, extended, noncanonical, and tampered proposal records",
+  async context => {
+    const fixture =
+      await createFinalizationFixture(
+        context
+      );
+
+    const finalizer =
+      new OfficialRegistryReleaseFinalizer({
+        registryVerifierOptions:
+          fixture
+            .registryVerifierOptions,
+      });
+
+    const extended = {
+      ...fixture.proposal.document,
+      unexpected:
+        true,
+    };
+
+    assert.throws(
+      () =>
+        finalizer.finalize(
+          fixture.predecessor,
+          extended,
+          Buffer.from(
+            `${canonicalizeJson(
+              extended
+            )}\n`,
+            "utf8"
+          ),
+          fixture.proposal
+            .signingPayloadBytes(),
+          fixture.signatureValue
+        ),
+      /missing or unexpected fields/u
+    );
+
+    const malformedPublisher =
+      structuredClone(
+        fixture.proposal.document
+      );
+
+    malformedPublisher.publication
+      .publisherId =
+        "../forged-publisher";
+
+    assert.throws(
+      () =>
+        finalizer.finalize(
+          fixture.predecessor,
+          malformedPublisher,
+          Buffer.from(
+            `${canonicalizeJson(
+              malformedPublisher
+            )}\n`,
+            "utf8"
+          ),
+          fixture.proposal
+            .signingPayloadBytes(),
+          fixture.signatureValue
+        ),
+      /publisherId is not canonical/u
+    );
+
+    assert.throws(
+      () =>
+        finalizer.finalize(
+          fixture.predecessor,
+          fixture.proposal.document,
+          Buffer.from(
+            JSON.stringify(
+              fixture.proposal
+                .document,
+              null,
+              2
+            ),
+            "utf8"
+          ),
+          fixture.proposal
+            .signingPayloadBytes(),
+          fixture.signatureValue
+        ),
+      /not the exact canonical proposal/u
+    );
+
+    const tampered =
+      structuredClone(
+        fixture.proposal.document
+      );
+
+    tampered.unsignedSnapshot
+      .packages.at(-1)
+      .archive.digest =
+        "f".repeat(64);
+
+    assert.throws(
+      () =>
+        finalizer.finalize(
+          fixture.predecessor,
+          tampered,
+          Buffer.from(
+            `${canonicalizeJson(
+              tampered
+            )}\n`,
+            "utf8"
+          ),
+          fixture.proposal
+            .signingPayloadBytes(),
+          fixture.signatureValue
+        ),
+      error =>
+        error.code ===
+          ErrorCodes
+            .REGISTRY_RELEASE_FINALIZATION_FAILED
+    );
+
+    const currentSnapshot =
+      signRegistrySnapshot(
+        fixture.registryAuthority,
+        {
+          sequence: 2,
+          publishedAt:
+            "2026-08-26T08:30:00.000Z",
+          previousSnapshotDigest:
+            fixture.predecessor.digest,
+          packages: [
+            createRegistryEntry(
+              "alpha",
+              "1.0.0"
+            ),
+            createRegistryEntry(
+              "beta",
+              "1.0.0"
+            ),
+          ],
+        }
+      );
+
+    const current =
+      new OfficialRegistryVerifier(
+        fixture
+          .registryVerifierOptions
+      ).verify(
+        currentSnapshot,
+        fixture.predecessor
+      );
+
+    assert.throws(
+      () =>
+        finalizer.finalize(
+          current,
+          fixture.proposal.document,
+          fixture.proposal.proposalBytes(),
+          fixture.proposal
+            .signingPayloadBytes(),
+          fixture.signatureValue
+        ),
+      /proposal is stale/u
+    );
+  }
+);
+
+test(
+  "finalization command rejects noncanonical signature files before writing a release",
+  async context => {
+    const fixture =
+      await createFinalizationFixture(
+        context
+      );
+
+    await fs.writeFile(
+      fixture.signaturePath,
+      `${fixture.signatureValue}\r\n`,
+      "utf8"
+    );
+
+    await assert.rejects(
+      finalizeOfficialRegistryRelease(
+        fixture.writtenProposal
+          .proposalPath,
+        {
+          registryHistory:
+            fixture.historyPath,
+          signature:
+            fixture.signaturePath,
+        },
+        {
+          workspaceRoot:
+            fixture.workspaceRoot,
+          registryVerifierOptions:
+            fixture
+              .registryVerifierOptions,
+        }
+      ),
+      error =>
+        error.code ===
+          ErrorCodes
+            .REGISTRY_RELEASE_FINALIZATION_FAILED
+    );
+
+    await assert.rejects(
+      fs.access(
+        join(
+          fixture.workspaceRoot,
+          ".aurora",
+          "registry-releases"
+        )
+      )
+    );
+  }
+);
+
+test(
+  "release writer reuses exact output and rejects forged or tampered content-addressed releases",
+  async context => {
+    const fixture =
+      await createFinalizationFixture(
+        context
+      );
+
+    const release =
+      new OfficialRegistryReleaseFinalizer({
+        registryVerifierOptions:
+          fixture
+            .registryVerifierOptions,
+      }).finalize(
+        fixture.predecessor,
+        fixture.proposal.document,
+        fixture.proposal.proposalBytes(),
+        fixture.proposal
+          .signingPayloadBytes(),
+        fixture.signatureValue
+      );
+
+    const writer =
+      new OfficialRegistryReleaseWriter({
+        workspaceRoot:
+          fixture.workspaceRoot,
+      });
+
+    await assert.rejects(
+      writer.write({
+        ...release,
+      }),
+      /authentic verified official registry release/u
+    );
+
+    const first =
+      await writer.write(
+        release
+      );
+
+    const second =
+      await writer.write(
+        release
+      );
+
+    assert.equal(
+      first.snapshotFile,
+      second.snapshotFile
+    );
+
+    assert.deepEqual(
+      await fs.readFile(
+        first.snapshotFile
+      ),
+      release.snapshotBytes()
+    );
+
+    await fs.writeFile(
+      first.snapshotFile,
+      "tampered\n",
+      "utf8"
+    );
+
+    await assert.rejects(
+      writer.write(
+        release
+      ),
+      error =>
+        error.code ===
+          ErrorCodes
+            .REGISTRY_RELEASE_FINALIZATION_FAILED
     );
   }
 );

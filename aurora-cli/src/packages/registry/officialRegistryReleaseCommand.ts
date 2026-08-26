@@ -99,7 +99,7 @@ function commandFailure(
   );
 }
 
-async function readRegistryHistory(
+export async function readOfficialRegistryHistory(
   workspaceBoundary:
     ProjectPathBoundary,
   historyPath: string
@@ -223,7 +223,7 @@ async function readRegistryHistory(
   }
 }
 
-function verifyRegistryHistory(
+export function verifyOfficialRegistryHistory(
   history:
     readonly unknown[],
   verifier:
@@ -285,13 +285,13 @@ export async function proposeOfficialRegistryRelease(
     );
 
   const history =
-    await readRegistryHistory(
+    await readOfficialRegistryHistory(
       workspaceBoundary,
       options.registryHistory
     );
 
   const predecessor =
-    verifyRegistryHistory(
+    verifyOfficialRegistryHistory(
       history,
       new OfficialRegistryVerifier(
         dependencies
