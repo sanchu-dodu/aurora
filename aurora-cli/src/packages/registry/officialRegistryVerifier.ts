@@ -289,10 +289,10 @@ function freezeOfficialRegistrySnapshot(
   );
 }
 
-function assertAuthenticVerifiedRecord(
-  value:
-    VerifiedOfficialRegistrySnapshot
-): void {
+export function assertVerifiedOfficialRegistrySnapshot(
+  value: unknown
+): asserts value is
+  VerifiedOfficialRegistrySnapshot {
   if (
     value === null ||
     typeof value !==
@@ -433,7 +433,7 @@ export class OfficialRegistryVerifier {
        * A predecessor must be an actual prior verifier result,
        * not merely an object shaped like the public interface.
        */
-      assertAuthenticVerifiedRecord(
+      assertVerifiedOfficialRegistrySnapshot(
         previous
       );
 

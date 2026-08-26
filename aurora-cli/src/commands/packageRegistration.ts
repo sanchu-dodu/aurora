@@ -15,6 +15,7 @@ import {
   packageRepairCommand,
   packageTreeCommand,
   packagePublishCommand,
+  packageProposeReleaseCommand,
 } from "../packages/packageCommand.js";
 
 registerCommand({
@@ -202,6 +203,61 @@ registerCommand({
           await packagePublishCommand(
             packageId,
             {
+              dryRun:
+                options.dryRun ===
+                  true,
+            }
+          );
+
+        }
+      );
+
+    pkg
+      .command("propose-release")
+      .description(
+        "Build an offline-signable official registry release proposal"
+      )
+      .argument("<package>")
+      .requiredOption(
+        "--registry-history <file>",
+        "Signed registry snapshots ordered from genesis to current"
+      )
+      .requiredOption(
+        "--archive-url <url>",
+        "Immutable content-addressed HTTPS package archive URL"
+      )
+      .requiredOption(
+        "--published-at <timestamp>",
+        "Canonical UTC publication timestamp"
+      )
+      .option(
+        "--dry-run",
+        "Verify and preview the proposal without writing files"
+      )
+      .action(
+        async (
+          packageId: string,
+          options: {
+            readonly registryHistory:
+              string;
+            readonly archiveUrl:
+              string;
+            readonly publishedAt:
+              string;
+            readonly dryRun?:
+              boolean;
+          }
+        ) => {
+
+          await packageProposeReleaseCommand(
+            packageId,
+            {
+              registryHistory:
+                options.registryHistory,
+              archiveUrl:
+                options.archiveUrl,
+              publishedAt:
+                options.publishedAt,
               dryRun:
                 options.dryRun ===
                   true,
