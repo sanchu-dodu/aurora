@@ -10,6 +10,7 @@ import { verifyPackage } from "./verify/verifyCommand.js";
 import { repairPackage } from "./repair/repairCommand.js";
 import { showDependencyTree } from "./tree/treeCommand.js";
 import { publishPackage } from "./publish/publishCommand.js";
+import { proposeOfficialRegistryRelease } from "./registry/officialRegistryReleaseCommand.js";
 
 export async function packageListCommand(): Promise<void> {
 
@@ -121,6 +122,27 @@ export async function packagePublishCommand(
 ): Promise<void> {
 
   await publishPackage(
+    packageId,
+    options
+  );
+
+}
+
+export async function packageProposeReleaseCommand(
+  packageId: string,
+  options: {
+    readonly registryHistory:
+      string;
+    readonly archiveUrl:
+      string;
+    readonly publishedAt:
+      string;
+    readonly dryRun?:
+      boolean;
+  }
+): Promise<void> {
+
+  await proposeOfficialRegistryRelease(
     packageId,
     options
   );

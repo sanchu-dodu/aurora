@@ -243,6 +243,10 @@ test(
         ["publish"],
       ],
       [
+        "package",
+        ["propose-release"],
+      ],
+      [
         "recovery",
         ["rollback"],
       ],
@@ -322,6 +326,7 @@ test(
         "list",
         "manifest",
         "publish",
+        "propose-release",
         "repair",
         "resolve",
         "search",

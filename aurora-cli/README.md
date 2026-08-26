@@ -124,6 +124,19 @@ Every bundle is stored by its SHA-256 archive digest and contains only:
 
 An identical command reuses only an exact existing bundle. Aurora refuses to overwrite mismatched content at a content-addressed path. This command does not upload an artifact, mutate the official registry, or access a private signing key; those remain separate release-authority steps.
 
+## Verified registry release proposals
+
+`aurora package propose-release <package>` bridges a verified publication bundle to Aurora's offline registry-signing process. The command requires `--registry-history <file>`, `--archive-url <url>`, and `--published-at <timestamp>`. The history file is a JSON array containing every signed official snapshot from genesis through the current registry state.
+
+Aurora re-verifies the complete signed history, rebuilds and authenticates the package publication, requires a canonical content-addressed HTTPS URL ending in `/<archive-digest>/package.tar.gz`, and refuses an existing or non-forward package version. The proposed snapshot advances the registry sequence exactly once, preserves every prior entry, binds the verified predecessor digest, and keeps package entries in canonical order.
+
+Use `--dry-run` to preview the exact sequence and signing-payload digest without writing files. A committed proposal is stored under `.aurora/registry-proposals` and contains:
+
+- `proposal.json`, the canonical proposal, unsigned snapshot, publication evidence, predecessor identity, and signing-payload digest
+- `registry-signing-payload.bin`, the exact domain-separated bytes for an offline Ed25519 signing authority
+
+The command never reads a private key, creates a signature, uploads an artifact, or mutates the live registry. After an authorized offline signer supplies `signature.value`, the normal official-registry verifier must authenticate the signed successor against its verified predecessor before distribution.
+
 ## Extension worker prototype
 
 The bundled Hello extension runs outside the main Aurora process through the Extension Worker v1 prototype. Aurora validates a strict manifest, scrubs inherited environment data, brokers declared capabilities, and enforces time, memory, output, and per-extension concurrency limits.
