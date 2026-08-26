@@ -1236,14 +1236,6 @@ test(
         context
       );
 
-    const proposalRelative =
-      fixture.writtenProposal
-        .proposalPath
-        .slice(
-          fixture.workspaceRoot
-            .length + 1
-        );
-
     const dependencies = {
       workspaceRoot:
         fixture.workspaceRoot,
@@ -1253,7 +1245,8 @@ test(
 
     const preview =
       await finalizeOfficialRegistryRelease(
-        proposalRelative,
+        fixture.writtenProposal
+          .proposalPath,
         {
           registryHistory:
             "registry-history.json",
@@ -1287,7 +1280,8 @@ test(
 
     const finalized =
       await finalizeOfficialRegistryRelease(
-        proposalRelative,
+        fixture.writtenProposal
+          .proposalPath,
         {
           registryHistory:
             "registry-history.json",
