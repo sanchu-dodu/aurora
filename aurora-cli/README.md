@@ -145,6 +145,14 @@ Aurora re-verifies the complete current history, requires the proposal directory
 
 Use `--dry-run` to authenticate the complete result without writing it. A committed release is stored immutably under `.aurora/registry-releases/<sequence>/<verified-snapshot-digest>/snapshot.json`; an identical rerun reuses only the exact existing bytes. Finalization never signs, reads a private key, uploads an artifact, overwrites registry history, or changes a live registry pointer. Distribution and activation remain separate authorized operations.
 
+## Verified registry release activation
+
+`aurora package activate-release <release>` is the separate, explicit operation that imports a finalized signed snapshot into the live local official registry. It requires `--registry-history <file>` containing every authenticated predecessor from genesis through the currently trusted snapshot. The release directory must contain exactly the canonical `snapshot.json` produced by finalization.
+
+Aurora verifies the complete chain and successor again, creates a portable canonical history, and stores an immutable generation under `.aurora/official-registry/generations/<sequence>/<snapshot-digest>`. Each generation contains only the signed snapshot, the complete authenticated history, and a canonical activation receipt binding both digests. After those files are durable, Aurora atomically changes `.aurora/official-registry/current.json` under the project lifecycle lock.
+
+Use `--dry-run` to authenticate the candidate without creating `.aurora` or changing live state. Activation is idempotent for the exact active generation and fails closed on rollback, forks, skipped sequences, split histories, unexpected release files, noncanonical bytes, altered generations, forged pointers, or concurrent state drift. It does not download packages, upload registry data, sign releases, access private keys, delete earlier generations, or edit the supplied history file. See [Verified official registry activation](docs/official-registry-activation.md) for the storage and recovery contract.
+
 ## Extension worker prototype
 
 The bundled Hello extension runs outside the main Aurora process through the Extension Worker v1 prototype. Aurora validates a strict manifest, scrubs inherited environment data, brokers declared capabilities, and enforces time, memory, output, and per-extension concurrency limits.
