@@ -11,6 +11,7 @@ import { repairPackage } from "./repair/repairCommand.js";
 import { showDependencyTree } from "./tree/treeCommand.js";
 import { publishPackage } from "./publish/publishCommand.js";
 import { proposeOfficialRegistryRelease } from "./registry/officialRegistryReleaseCommand.js";
+import { finalizeOfficialRegistryRelease } from "./registry/officialRegistryReleaseFinalizationCommand.js";
 
 export async function packageListCommand(): Promise<void> {
 
@@ -144,6 +145,25 @@ export async function packageProposeReleaseCommand(
 
   await proposeOfficialRegistryRelease(
     packageId,
+    options
+  );
+
+}
+
+export async function packageFinalizeReleaseCommand(
+  proposalPath: string,
+  options: {
+    readonly registryHistory:
+      string;
+    readonly signature:
+      string;
+    readonly dryRun?:
+      boolean;
+  }
+): Promise<void> {
+
+  await finalizeOfficialRegistryRelease(
+    proposalPath,
     options
   );
 

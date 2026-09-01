@@ -244,6 +244,10 @@ test(
       ],
       [
         "package",
+        ["finalize-release"],
+      ],
+      [
+        "package",
         ["propose-release"],
       ],
       [
@@ -321,6 +325,7 @@ test(
       ],
 
       package: [
+        "finalize-release",
         "info",
         "install",
         "list",
