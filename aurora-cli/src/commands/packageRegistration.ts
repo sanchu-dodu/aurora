@@ -17,6 +17,7 @@ import {
   packagePublishCommand,
   packageProposeReleaseCommand,
   packageFinalizeReleaseCommand,
+  packageActivateReleaseCommand,
 } from "../packages/packageCommand.js";
 
 registerCommand({
@@ -204,6 +205,48 @@ registerCommand({
           await packagePublishCommand(
             packageId,
             {
+              dryRun:
+                options.dryRun ===
+                  true,
+            }
+          );
+
+        }
+      );
+
+    pkg
+      .command("activate-release")
+      .description(
+        "Authenticate and explicitly activate a finalized official registry release"
+      )
+      .argument(
+        "<release>",
+        "Immutable finalized registry release directory"
+      )
+      .requiredOption(
+        "--registry-history <file>",
+        "Signed predecessor snapshots ordered from genesis to current"
+      )
+      .option(
+        "--dry-run",
+        "Verify the activation without changing the live registry pointer"
+      )
+      .action(
+        async (
+          releasePath: string,
+          options: {
+            readonly registryHistory:
+              string;
+            readonly dryRun?:
+              boolean;
+          }
+        ) => {
+
+          await packageActivateReleaseCommand(
+            releasePath,
+            {
+              registryHistory:
+                options.registryHistory,
               dryRun:
                 options.dryRun ===
                   true,
