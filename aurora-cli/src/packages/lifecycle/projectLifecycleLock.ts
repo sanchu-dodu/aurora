@@ -899,6 +899,30 @@ async function readStableRegularFile(
     const completed =
       await handle.stat();
 
+    const completedPath =
+      await fs.lstat(file);
+
+    if (
+      !sameFileIdentity(
+        completed,
+        completedPath
+      )
+    ) {
+      /*
+       * The owner may have released and a later owner may have acquired
+       * between the two path observations. Let acquisition retry the fixed
+       * authority path instead of consuming metadata from the old handle.
+       */
+      const retry =
+        new Error(
+          "Aurora project lifecycle lock authority changed while it was being read."
+        ) as NodeJS.ErrnoException;
+
+      retry.code = "ENOENT";
+
+      throw retry;
+    }
+
     if (
       fileChangedWhileReading(
         opened,
@@ -943,9 +967,7 @@ function fileChangedWhileReading(
   return (
     before.size !== after.size ||
     before.mtimeMs !==
-      after.mtimeMs ||
-    before.ctimeMs !==
-      after.ctimeMs
+      after.mtimeMs
   );
 }
 

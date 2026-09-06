@@ -12,6 +12,7 @@ import { showDependencyTree } from "./tree/treeCommand.js";
 import { publishPackage } from "./publish/publishCommand.js";
 import { proposeOfficialRegistryRelease } from "./registry/officialRegistryReleaseCommand.js";
 import { finalizeOfficialRegistryRelease } from "./registry/officialRegistryReleaseFinalizationCommand.js";
+import { activateOfficialRegistryRelease } from "./registry/officialRegistryReleaseActivationCommand.js";
 
 export async function packageListCommand(): Promise<void> {
 
@@ -164,6 +165,23 @@ export async function packageFinalizeReleaseCommand(
 
   await finalizeOfficialRegistryRelease(
     proposalPath,
+    options
+  );
+
+}
+
+export async function packageActivateReleaseCommand(
+  releasePath: string,
+  options: {
+    readonly registryHistory:
+      string;
+    readonly dryRun?:
+      boolean;
+  }
+): Promise<void> {
+
+  await activateOfficialRegistryRelease(
+    releasePath,
     options
   );
 

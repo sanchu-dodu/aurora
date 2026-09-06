@@ -244,6 +244,10 @@ test(
       ],
       [
         "package",
+        ["activate-release"],
+      ],
+      [
+        "package",
         ["finalize-release"],
       ],
       [
@@ -325,6 +329,7 @@ test(
       ],
 
       package: [
+        "activate-release",
         "finalize-release",
         "info",
         "install",

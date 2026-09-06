@@ -148,13 +148,42 @@ export async function durableEnsureDirectory(
     const candidate of
     missing.reverse()
   ) {
-    await fs.mkdir(
-      candidate,
-      {
-        recursive: false,
-        mode,
+    try {
+      await fs.mkdir(
+        candidate,
+        {
+          recursive: false,
+          mode,
+        }
+      );
+    }
+    catch (error) {
+      const code =
+        (
+          error as NodeJS.ErrnoException
+        ).code;
+
+      if (code !== "EEXIST") {
+        throw error;
       }
-    );
+
+      /*
+       * Another cooperating writer may create the same missing directory
+       * between discovery and mkdir. Accept only the resulting real
+       * directory; a file or symbolic-link substitution still fails closed.
+       */
+      const information =
+        await fs.lstat(
+          candidate
+        );
+
+      if (
+        !information.isDirectory() ||
+        information.isSymbolicLink()
+      ) {
+        throw error;
+      }
+    }
 
     await syncDirectory(
       path.dirname(
