@@ -41,12 +41,20 @@ export interface VerifiedIdentity {
 }
 
 export class IdTokenError extends Error {
+  /*
+   * Declared explicitly rather than as a TypeScript parameter property so
+   * this module remains loadable under Node's native type stripping, which
+   * the security regression tests rely on.
+   */
+  readonly reason: string;
+
   constructor(
     message: string,
-    readonly reason: string
+    reason: string
   ) {
     super(message);
     this.name = "IdTokenError";
+    this.reason = reason;
   }
 }
 
