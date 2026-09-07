@@ -24,7 +24,8 @@ export type SecurityEvent =
   | "input_validation_failed"
   | "rate_limit_exceeded"
   | "upstream_failure"
-  | "malformed_request";
+  | "malformed_request"
+  | "authentication_failed";
 
 export type SecurityOutcome =
   | "blocked"

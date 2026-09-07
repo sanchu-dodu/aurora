@@ -8,6 +8,11 @@ import {
 import {
   logSecurityEvent,
 } from "@/app/lib/securityLog";
+import {
+  bearerToken,
+  IdTokenError,
+  idTokenVerifier,
+} from "@/app/lib/firebaseIdToken";
 import type { ChatMessage } from "@/app/lib/ai/types";
 
 /*
@@ -48,7 +53,25 @@ const DEFAULT_MODEL =
 
 const RATE_LIMIT_REQUESTS = 10;
 
+/*
+ * AEGIS-003: authenticated callers are individually attributable and get a
+ * higher quota than shared anonymous origins.
+ */
+const AUTHENTICATED_RATE_LIMIT_REQUESTS = 60;
+
 const RATE_LIMIT_WINDOW_MS = 60_000;
+
+/*
+ * AEGIS-003: opt-in hard requirement for authentication.
+ *
+ * It defaults to OFF deliberately. AIAssistant renders on the public
+ * homepage (app/page.tsx), so defaulting this ON would break anonymous
+ * browsing - a functional regression disguised as a security fix. Set
+ * AURORA_REQUIRE_AI_AUTH=true to close the route to anonymous callers once
+ * that product decision is made.
+ */
+const REQUIRE_AUTH =
+  process.env.AURORA_REQUIRE_AI_AUTH === "true";
 
 interface ValidatedChatRequest {
   readonly messages: ChatMessage[];
@@ -144,11 +167,93 @@ function validate(
 
 export async function POST(request: NextRequest) {
   /*
+   * AEGIS-003: establish caller identity first, so throttling can be keyed
+   * to a verified user rather than a spoofable proxy header where possible.
+   */
+  const credential = bearerToken(request);
+
+  let uid: string | null = null;
+
+  if (credential.kind === "malformed") {
+    logSecurityEvent(
+      {
+        event: "authentication_failed",
+        route: "/api/ai/chat",
+        outcome: "blocked",
+        reason: "malformed_authorization_header",
+        finding: "AEGIS-003",
+      },
+      clientKey(request)
+    );
+
+    return NextResponse.json(
+      { error: "Invalid authentication credential." },
+      { status: 401 }
+    );
+  }
+
+  if (credential.kind === "token") {
+    try {
+      const identity =
+        await idTokenVerifier().verify(
+          credential.token
+        );
+
+      uid = identity.uid;
+    } catch (error) {
+      /*
+       * A presented-but-invalid credential is a security signal and is
+       * rejected outright. Absence of a credential is not.
+       */
+      logSecurityEvent(
+        {
+          event: "authentication_failed",
+          route: "/api/ai/chat",
+          outcome: "blocked",
+          reason:
+            error instanceof IdTokenError
+              ? error.reason
+              : "verification_error",
+          finding: "AEGIS-003",
+        },
+        clientKey(request)
+      );
+
+      return NextResponse.json(
+        { error: "Invalid authentication credential." },
+        { status: 401 }
+      );
+    }
+  }
+
+  if (REQUIRE_AUTH && !uid) {
+    logSecurityEvent(
+      {
+        event: "authentication_failed",
+        route: "/api/ai/chat",
+        outcome: "blocked",
+        reason: "credential_required",
+        finding: "AEGIS-003",
+      },
+      clientKey(request)
+    );
+
+    return NextResponse.json(
+      { error: "Authentication is required." },
+      { status: 401 }
+    );
+  }
+
+  /*
    * AEGIS-003: throttle before any upstream work is performed.
    */
   const limit = rateLimit(
-    `ai-chat:${clientKey(request)}`,
-    RATE_LIMIT_REQUESTS,
+    uid
+      ? `ai-chat:uid:${uid}`
+      : `ai-chat:${clientKey(request)}`,
+    uid
+      ? AUTHENTICATED_RATE_LIMIT_REQUESTS
+      : RATE_LIMIT_REQUESTS,
     RATE_LIMIT_WINDOW_MS
   );
 

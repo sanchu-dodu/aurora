@@ -7,7 +7,7 @@
 **Assessment type:** Static source, dependency, configuration, and CI review + approved remediation
 **Status:** Remediation applied and independently verified on branch `arena/01a07c24-aurora`. Not deployed — Gate 5 (production) NOT authorized.
 
-> **Remediation outcome:** AEGIS-001 through AEGIS-006 are CLOSED/VERIFIED. AEGIS-003 is PARTIALLY CLOSED (rate limiting shipped; server-side authentication deferred — see §8). AEGIS-007 and AEGIS-008 are CLOSED/VERIFIED. Verification evidence is in §8.
+> **Remediation outcome:** All findings AEGIS-001 through AEGIS-008 are CLOSED/VERIFIED. AEGIS-003 is CLOSED/VERIFIED (§11). AEGIS-007 and AEGIS-008 are CLOSED/VERIFIED. Verification evidence is in §8.
 
 ---
 
@@ -32,7 +32,7 @@
 |---|---|---|---|---|
 | AEGIS-001 | **High** | High | TMDB URL path/parameter injection via unvalidated `id` | **CLOSED/VERIFIED** |
 | AEGIS-002 | **Medium** | High | Unauthenticated proxy to internal Ollama service | **CLOSED/VERIFIED** |
-| AEGIS-003 | **Medium** | High | No authentication or rate limiting on any API route | **PARTIALLY CLOSED** |
+| AEGIS-003 | **Medium** | High | No authentication or rate limiting on any API route | **CLOSED/VERIFIED** |
 | AEGIS-004 | **Medium** | High | No security response headers or CSP | **CLOSED/VERIFIED** |
 | AEGIS-005 | **Low** | High | Unhandled input type crash in `/api/ai` | **CLOSED/VERIFIED** |
 | AEGIS-006 | **Low** | High | Known-vulnerable transitive dependencies | **CLOSED/VERIFIED** |
@@ -482,3 +482,92 @@ RESULT: 15/15 attacks blocked, 0 leaked; 4/4 benign paths accepted
 4. **Logs are emitted but unalerted** — route them to monitoring to gain detection.
 5. **Build and E2E unverified in-sandbox** (TMDB egress blocked; baseline fails identically) — must pass in CI.
 6. **`aurora-cli` command surface** outside trust, signing, execution, path-boundary, and extraction remains lower-depth reviewed.
+
+---
+
+## 11. CHANGE-008 — AEGIS-003 · Identity verification (closes the last finding)
+
+**Authorization:** user approved, 2026-09-07. Gate 4.
+
+### Correction to an earlier assessment claim
+
+§8 stated that server-side authentication was blocked because it "requires `firebase-admin` and a service-account credential." **That was wrong, and it is corrected here.**
+
+Verifying a Firebase ID token requires only Google's **public** x509 signing certificates and the Firebase **project ID**, which is itself public and already ships in the client bundle. A service-account credential is needed to *mint* custom tokens or call privileged Admin APIs — **not to verify one**. The blocker was mistaken, so the work was completed rather than deferred again.
+
+Implemented in `web/app/lib/firebaseIdToken.ts` directly against `node:crypto`. **No new dependencies** — `package.json` and both lockfiles are unchanged, keeping the supply-chain surface flat for ~150 lines of well-specified logic.
+
+### A finding that emerged during design
+
+Reconnaissance showed `AIAssistant` is rendered by `app/page.tsx` — **the public homepage**. `ProtectedRoute` guards only `/profiles`, and `/ai` is public. Unconditionally requiring authentication would therefore have broken anonymous browsing: a functional regression disguised as a security fix.
+
+The control is consequently **tiered identity**, not a blanket gate:
+
+- **Anonymous callers still work**, at the existing 10 req/min quota.
+- **Authenticated callers** are throttled per verified `uid` at 60 req/min, and are individually attributable rather than sharing a spoofable IP bucket.
+- **A presented-but-invalid credential is rejected with 401** and logged as `authentication_failed`. Absence of a credential is not an error; presenting a broken one is a security signal.
+- **`AURORA_REQUIRE_AI_AUTH=true`** closes the route to anonymous callers entirely. It defaults to **off** so the product decision stays yours; flipping it needs no code change.
+
+`AIAssistant` now attaches the ID token when a visitor is signed in, wrapped so that token-retrieval failure degrades to anonymous rather than blocking the request.
+
+### A10 verification — 18/18 on the verifier
+
+The algorithm is pinned to RS256 before any signature work, defeating the two classic JWT bypasses outright.
+
+```
+FORGERY / CONFUSION
+PASS  signed by attacker key        -> bad_signature
+PASS  alg=none (unsigned)           -> bad_algorithm
+PASS  alg=HS256 confusion           -> bad_algorithm
+PASS  unknown kid / missing kid     -> unknown_kid / missing_kid
+PASS  tampered payload (uid swap)   -> bad_signature
+CLAIM VALIDATION
+PASS  wrong issuer / wrong audience / expired / future iat / empty subject
+MALFORMED INPUT
+PASS  not a JWT / two segments / empty / oversized / non-JSON header
+LEGITIMATE
+PASS  valid token accepted (uid resolved)
+PASS  clock-skew tolerance (30s past exp)
+RESULT: 18 passed, 0 failed
+```
+
+### A10 verification — 6/6 on route integration
+
+```
+PASS  anonymous request still succeeds            status=200
+PASS  garbage bearer -> 401
+PASS  alg=none forgery -> 401
+PASS  empty bearer -> 401
+PASS  non-bearer scheme -> treated anonymous (200)
+PASS  anonymous quota still enforced (429)
+```
+
+**The verification loop caught a real defect.** The first run failed one case: `Authorization: Bearer ` with an empty value fell through as anonymous instead of 401, letting a caller probe the boundary without generating an auth-failure signal. `bearerToken` was reworked to distinguish *absent* / *token* / *malformed*, and the case now returns 401. This is recorded because it is exactly why A10 exists — the remediation agent's own confidence was not sufficient evidence.
+
+Confirmed live: anonymous → 502 (reaches the handler, no local Ollama), forged `alg=none` → **401**, garbage token → **401**.
+
+### Regression — all suites
+
+| Suite | Result |
+|---|---|
+| AEGIS-001 TMDB injection | 13/13 |
+| AEGIS-002 AI hardening | 13/13 |
+| AEGIS-007 movies route | 13/13 |
+| AEGIS-008 security logging | 16/16 |
+| AEGIS-003 token verifier | 18/18 |
+| AEGIS-003 route integration | 6/6 |
+| **Total** | **79/79** |
+
+Web lint, `tsc --noEmit`, and production compile clean. Live: 7/7 headers, traversal 400, fan-out 400, `/ai` 200. `package.json` unchanged in both workspaces.
+
+**Status: CLOSED/VERIFIED.**
+
+### Final residual risk
+
+1. **Rate limiting remains per-process in memory.** On serverless or multi-instance hosting the effective limit multiplies by instance count. Authenticated callers are now keyed by `uid` rather than IP, which improves attribution but does not make the counter global. Back it with shared storage before production scale.
+2. **CSP is Report-Only.** Promote after reviewing violation reports.
+3. **Security logs are emitted but unalerted.** Route `authentication_failed`, `rate_limit_exceeded`, and `finding:"AEGIS-001"` into monitoring to convert forensics into detection.
+4. **`/api/ai/chat` is still anonymously reachable by design** (`AURORA_REQUIRE_AI_AUTH=false`), because it serves the public homepage. Flip the flag if the product decision changes.
+5. **Google certificate fetch is a runtime dependency** for token verification. Keys are cached per `Cache-Control` (clamped 5 min–24 h); a Google outage degrades authenticated requests to 401 while anonymous access continues.
+6. **Build and E2E remain unverified in-sandbox** (TMDB egress blocked; baseline fails identically) — must pass in CI.
+7. **`aurora-cli` surface** outside trust, signing, execution, path-boundary, and extraction remains lower-depth reviewed.
