@@ -1,7 +1,75 @@
 import { NextResponse } from "next/server";
+import {
+  clientKey,
+  rateLimit,
+} from "@/app/lib/rateLimit";
+
+/*
+ * AEGIS-005: bound the accepted prompt length. This endpoint returns a static
+ * list, but an unbounded string still forces needless parsing work.
+ */
+const MAX_PROMPT_LENGTH = 2_000;
 
 export async function POST(request: Request) {
-  const { prompt } = await request.json();
+  /*
+   * AEGIS-003: throttle anonymous callers.
+   */
+  const limit = rateLimit(
+    `ai:${clientKey(request)}`,
+    30,
+    60_000
+  );
+
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests. Please slow down." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(
+            limit.retryAfterSeconds
+          ),
+        },
+      }
+    );
+  }
+
+  /*
+   * AEGIS-005: the request body is attacker-controlled. Parsing it outside a
+   * try/catch turned malformed JSON into an unhandled 500, and calling
+   * .toLowerCase() on a non-string body value threw a TypeError.
+   */
+  let body: unknown;
+
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Request body must be valid JSON." },
+      { status: 400 }
+    );
+  }
+
+  const prompt =
+    typeof body === "object" &&
+    body !== null &&
+    "prompt" in body
+      ? (body as { prompt: unknown }).prompt
+      : undefined;
+
+  if (typeof prompt !== "string") {
+    return NextResponse.json(
+      { error: "A 'prompt' string is required." },
+      { status: 400 }
+    );
+  }
+
+  if (prompt.length > MAX_PROMPT_LENGTH) {
+    return NextResponse.json(
+      { error: "Prompt is too long." },
+      { status: 413 }
+    );
+  }
 
   const text = prompt.toLowerCase();
 
