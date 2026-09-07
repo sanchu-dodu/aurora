@@ -7,7 +7,7 @@
 **Assessment type:** Static source, dependency, configuration, and CI review + approved remediation
 **Status:** Remediation applied and independently verified on branch `arena/01a07c24-aurora`. Not deployed — Gate 5 (production) NOT authorized.
 
-> **Remediation outcome:** AEGIS-001 through AEGIS-006 are CLOSED/VERIFIED. AEGIS-003 is PARTIALLY CLOSED (rate limiting shipped; server-side authentication deferred — see §8). AEGIS-008 is CLOSED/VERIFIED. AEGIS-007 remains OPEN pending a product decision. Verification evidence is in §8.
+> **Remediation outcome:** AEGIS-001 through AEGIS-006 are CLOSED/VERIFIED. AEGIS-003 is PARTIALLY CLOSED (rate limiting shipped; server-side authentication deferred — see §8). AEGIS-007 and AEGIS-008 are CLOSED/VERIFIED. Verification evidence is in §8.
 
 ---
 
@@ -36,7 +36,7 @@
 | AEGIS-004 | **Medium** | High | No security response headers or CSP | **CLOSED/VERIFIED** |
 | AEGIS-005 | **Low** | High | Unhandled input type crash in `/api/ai` | **CLOSED/VERIFIED** |
 | AEGIS-006 | **Low** | High | Known-vulnerable transitive dependencies | **CLOSED/VERIFIED** |
-| AEGIS-007 | Informational | High | `/api/ai/movies` called but route does not exist | OPEN (needs product decision) |
+| AEGIS-007 | Informational | High | `/api/ai/movies` called but route does not exist | **CLOSED/VERIFIED** |
 | AEGIS-008 | Informational | High | No server-side security logging | **CLOSED/VERIFIED** |
 
 Counts — Critical: 0 · High: 1 · Medium: 3 · Low: 2 · Informational: 2
@@ -243,7 +243,7 @@ Not covered:
 - Rules in `firestore.rules` were reviewed statically and **not** executed against the Firestore emulator.
 - No dynamic or authenticated application testing was performed (Gate 2 not authorized).
 - Third-party services (TMDB, YouTube, npm, GitHub) were not contacted.
-- `aurora-cli` review prioritized the trust, signing, execution, and path-boundary subsystems; the broader command surface received a lower-depth pass.
+- `aurora-cli` review prioritized the trust, signing, execution, and path-boundary subsystems. The archive-extraction path was subsequently probed adversarially (see §10) and found sound; the remaining command surface still received only a lower-depth pass.
 
 ---
 
@@ -403,3 +403,82 @@ Note the second entry: the injected `api_key` value was scrubbed while the **att
 
 - Logs are emitted but **nothing alerts on them yet**. Route `rate_limit_exceeded` and `finding:"AEGIS-001"` events into your monitoring platform to convert forensics into detection.
 - AEGIS-003 remains PARTIAL (no server-side auth) and AEGIS-007 remains OPEN — both still need your decisions.
+
+---
+
+## 10. CHANGE-007 — AEGIS-007 · Missing route implemented + adversarial re-review
+
+**Authorization:** user approved, 2026-09-07. Gate 4.
+
+### AEGIS-007 resolution
+
+`web/app/ai/page.tsx` contained a debug short-circuit (`console.log(await aiRes.text()); return;`) that made the remainder of `askAurora()` unreachable — which is why the missing `/api/ai/movies` route never surfaced as a visible failure. Two defects, one cause.
+
+Both are now resolved: the short-circuit was removed (a 2-line deletion, no other page logic touched) and `web/app/api/ai/movies/route.ts` was implemented. Deleting the short-circuit alone would have exposed a live 404 on a working page, so the route was required to avoid regressing the user experience.
+
+The new route was built with the controls established elsewhere in this assessment rather than as a bare implementation:
+
+- `titles` validated as an array; non-string, empty, and oversized entries filtered.
+- **Fan-out bounded to 10 titles.** Each accepted request triggers one upstream TMDB lookup per title, so an unbounded array would convert a single request into unlimited upstream traffic charged to Aurora's credential — the same class of abuse as AEGIS-001. Rate limit set to 20/min, tighter than the 1:1 proxy routes.
+- Response projected to only the five fields the client renders, so upstream payload fields are not relayed.
+- Duplicate results collapsed.
+- Rate limiting and AEGIS-008 security logging wired in.
+
+**A10 verification — 13/13 passed:**
+
+```
+PASS  malformed JSON / missing titles / titles not array   -> 400
+PASS  500-title fan-out rejected -> 400   upstreamCalls=0
+PASS  no upstream traffic on rejection
+PASS  valid request -> 200, fan-out bounded to input size (2 titles = 2 calls)
+PASS  no upstream field leakage (unrequested fields stripped)
+PASS  only whitelisted fields returned
+PASS  duplicate results collapsed
+PASS  oversized title filtered out
+PASS  rate limit triggers 429
+```
+
+Confirmed live: `POST /api/ai/movies` returns **200** (previously 404), the 500-title payload is rejected **400 with zero upstream calls**, and `GET /ai` renders 200.
+
+**Status: CLOSED/VERIFIED.**
+
+### Loop C — adversarial re-review of the CLI extraction surface
+
+§7 acknowledged that the broader `aurora-cli` surface received only a lower-depth pass. The highest-risk unreviewed component was archive extraction, where a malicious package artifact could attempt to write outside the staging directory.
+
+Two controls were examined and then probed:
+
+1. **Entry-type allowlist** (`officialRegistryArtifactExtractor.ts`) — only regular files (type `0`/`0x30`) and directories (`0x35`) are accepted. Symlink, hardlink, device, and PAX extension entries are rejected outright, eliminating the symlink-escape class entirely.
+2. **Path canonicalization** (`canonicalArchivePath`) — rejects absolute paths, `..`, `.`, empty segments, backslashes, NUL and control characters, colons, Windows reserved device names, and trailing dot/space.
+
+The guard logic was replicated exactly and driven with 15 adversarial archive paths:
+
+```
+BLOCKED  classic traversal, nested traversal, absolute unix, windows backslash,
+         windows drive, UNC path, NUL byte, empty segment, single dot,
+         trailing space, trailing dot, reserved device, reserved device ext,
+         control char, oversized
+RESULT: 15/15 attacks blocked, 0 leaked; 4/4 benign paths accepted
+```
+
+**No new finding.** The extraction surface is sound, and the guard produces no false rejections on legitimate paths. Recorded as a verified positive control.
+
+### Regression
+
+| Check | Result |
+|---|---|
+| AEGIS-001 harness | 13/13 pass |
+| AEGIS-002 harness | 13/13 pass |
+| AEGIS-008 harness | 16/16 pass |
+| AEGIS-007 harness | 13/13 pass |
+| Web lint / `tsc --noEmit` / compile | Clean |
+| Live: headers, traversal block, `/ai` render | 7/7 headers, 400, 200 |
+
+### Final residual risk
+
+1. **AEGIS-003 remains PARTIAL** — API routes are throttled but still unauthenticated. Requires `firebase-admin` and a service-account credential. **The only finding not fully closed.**
+2. **Rate limiting is per-process** — multiply the limit by instance count on scaled deployments.
+3. **CSP is Report-Only** — promote after reviewing violation reports.
+4. **Logs are emitted but unalerted** — route them to monitoring to gain detection.
+5. **Build and E2E unverified in-sandbox** (TMDB egress blocked; baseline fails identically) — must pass in CI.
+6. **`aurora-cli` command surface** outside trust, signing, execution, path-boundary, and extraction remains lower-depth reviewed.
