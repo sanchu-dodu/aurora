@@ -3,8 +3,44 @@ import type { TmdbMovie, TmdbVideo } from "../types/media";
 const API_KEY = process.env.TMDB_API_TOKEN;
 const BASE_URL = "https://api.themoviedb.org/3";
 
+const MOVIE_ID_PATTERN = /^[0-9]+$/;
+
+/*
+ * AEGIS-001: movie identifiers flow in from route params and query strings
+ * and are interpolated into the upstream URL path. An unvalidated value can
+ * traverse to a different TMDB endpoint ("550/../../account") or inject an
+ * "api_key" parameter that overrides the server credential. TMDB movie IDs
+ * are integers, so a digits-only allowlist is the minimum safe contract.
+ */
+function assertMovieId(
+  id: number | string
+): string {
+  const value = String(id);
+
+  if (!MOVIE_ID_PATTERN.test(value)) {
+    throw new Error("Invalid TMDB movie ID.");
+  }
+
+  return value;
+}
+
+/*
+ * Builds an upstream URL structurally so that neither the path nor the
+ * credential can be altered by caller-supplied input.
+ */
+function buildTmdbUrl(path: string): URL {
+  const url = new URL(`${BASE_URL}${path}`);
+
+  url.searchParams.set(
+    "api_key",
+    API_KEY ?? ""
+  );
+
+  return url;
+}
+
 async function fetchMovies(endpoint: string): Promise<TmdbMovie[]> {
-  const url = `${BASE_URL}${endpoint}?api_key=${API_KEY}`;
+  const url = buildTmdbUrl(endpoint);
 
   const res = await fetch(url, {
     next: { revalidate: 3600 },
@@ -50,7 +86,9 @@ export async function getFeaturedMovie() {
 }
 
 export async function getMovieDetails(id: string) {
-  const url = `${BASE_URL}/movie/${id}?api_key=${API_KEY}`;
+  const url = buildTmdbUrl(
+    `/movie/${assertMovieId(id)}`
+  );
 
   const res = await fetch(url, {
     next: { revalidate: 3600 },
@@ -68,7 +106,9 @@ export async function getMovieDetails(id: string) {
 }
 
 export async function getMovieVideos(id: string) {
-  const url = `${BASE_URL}/movie/${id}/videos?api_key=${API_KEY}`;
+  const url = buildTmdbUrl(
+    `/movie/${assertMovieId(id)}/videos`
+  );
 
   const res = await fetch(url);
 
@@ -84,7 +124,9 @@ export async function getMovieVideos(id: string) {
 }
 
 export async function getSimilarMovies(id: string) {
-  const url = `${BASE_URL}/movie/${id}/similar?api_key=${API_KEY}`;
+  const url = buildTmdbUrl(
+    `/movie/${assertMovieId(id)}/similar`
+  );
 
   const res = await fetch(url);
 
@@ -100,9 +142,9 @@ export async function getSimilarMovies(id: string) {
 }
 
 export async function searchMovies(query: string) {
-  const url = `${BASE_URL}/search/movie?api_key=${API_KEY}&query=${encodeURIComponent(
-    query
-  )}`;
+  const url = buildTmdbUrl("/search/movie");
+
+  url.searchParams.set("query", query);
 
   const res = await fetch(url);
 
@@ -118,7 +160,9 @@ export async function searchMovies(query: string) {
 }
 
 export async function getMovieTrailer(id: number | string) {
-  const url = `${BASE_URL}/movie/${id}/videos?api_key=${API_KEY}`;
+  const url = buildTmdbUrl(
+    `/movie/${assertMovieId(id)}/videos`
+  );
 
   const res = await fetch(url, {
     next: { revalidate: 3600 },
@@ -142,7 +186,9 @@ export async function getMovieTrailer(id: number | string) {
 }
 
 export async function searchMovieByTitle(title: string) {
-  const url = `${BASE_URL}/search/movie?api_key=${API_KEY}&query=${encodeURIComponent(title)}`;
+  const url = buildTmdbUrl("/search/movie");
+
+  url.searchParams.set("query", title);
 
   const res = await fetch(url, {
     next: { revalidate: 3600 },

@@ -11,6 +11,14 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+
+    /*
+     * The security regression tests run under Node's native type stripping
+     * (`node --experimental-strip-types`), which resolves the real file and
+     * therefore requires explicit ".ts" import specifiers. Safe here because
+     * "noEmit" is set: this affects type checking only, never build output.
+     */
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
 

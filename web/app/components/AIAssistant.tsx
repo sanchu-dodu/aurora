@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { auth } from "../lib/firebase";
+
 type Message = {
   role: "user" | "assistant";
   content: string;
@@ -34,11 +36,33 @@ export default function AIAssistant() {
     setLoading(true);
 
     try {
+      /*
+       * AEGIS-003: attach the Firebase ID token when the visitor is signed
+       * in, so the request is attributed to a verified user and receives the
+       * authenticated quota. Anonymous visitors still work: this component
+       * renders on the public homepage.
+       */
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      try {
+        const token =
+          await auth.currentUser?.getIdToken();
+
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+      } catch {
+        /*
+         * Token retrieval failure must not block the request; it simply
+         * proceeds as anonymous.
+         */
+      }
+
       const res = await fetch("/api/ai/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify({
           messages: updatedMessages,
         }),
