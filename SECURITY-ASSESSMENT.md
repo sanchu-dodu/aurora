@@ -7,7 +7,7 @@
 **Assessment type:** Static source, dependency, configuration, and CI review + approved remediation
 **Status:** Remediation applied and independently verified on branch `arena/01a07c24-aurora`. Not deployed — Gate 5 (production) NOT authorized.
 
-> **Remediation outcome:** AEGIS-001 through AEGIS-006 are CLOSED/VERIFIED. AEGIS-003 is PARTIALLY CLOSED (rate limiting shipped; server-side authentication deferred — see §8). AEGIS-007 and AEGIS-008 remain OPEN by design. Verification evidence is in §8.
+> **Remediation outcome:** AEGIS-001 through AEGIS-006 are CLOSED/VERIFIED. AEGIS-003 is PARTIALLY CLOSED (rate limiting shipped; server-side authentication deferred — see §8). AEGIS-008 is CLOSED/VERIFIED. AEGIS-007 remains OPEN pending a product decision. Verification evidence is in §8.
 
 ---
 
@@ -37,7 +37,7 @@
 | AEGIS-005 | **Low** | High | Unhandled input type crash in `/api/ai` | **CLOSED/VERIFIED** |
 | AEGIS-006 | **Low** | High | Known-vulnerable transitive dependencies | **CLOSED/VERIFIED** |
 | AEGIS-007 | Informational | High | `/api/ai/movies` called but route does not exist | OPEN (needs product decision) |
-| AEGIS-008 | Informational | High | No server-side security logging | OPEN (deferred) |
+| AEGIS-008 | Informational | High | No server-side security logging | **CLOSED/VERIFIED** |
 
 Counts — Critical: 0 · High: 1 · Medium: 3 · Low: 2 · Informational: 2
 
@@ -339,7 +339,7 @@ All seven headers confirmed present on a live response. **Status: CLOSED/VERIFIE
 1. **API routes remain unauthenticated** (throttled only) — AEGIS-003 partial.
 2. **Rate limiter is per-instance** — weak under horizontal scaling.
 3. **CSP is Report-Only** — no enforcement until promoted.
-4. **No server-side security logging** (AEGIS-008) — exploitation attempts still leave no audit trail. The 400/429 responses are now at least observable in platform access logs.
+4. ~~No server-side security logging~~ — **resolved, see CHANGE-006.** Remaining gap: logs are emitted but nothing *alerts* on them. Wire `event:"rate_limit_exceeded"` and `finding:"AEGIS-001"` to your monitoring platform to gain detection rather than just forensics.
 5. **E2E and full build unverified in-sandbox** — must pass in CI before merge.
 6. **AEGIS-007 open:** `web/app/ai/page.tsx` contains a debug short-circuit (`console.log(await aiRes.text()); return;` at line ~33) that makes the rest of `askAurora()`, including the `/api/ai/movies` calls, unreachable dead code. Left untouched: removing it changes product behavior and would expose the missing route. **Requires your decision.**
 
@@ -350,3 +350,56 @@ All seven headers confirmed present on a live response. **Status: CLOSED/VERIFIE
 3. Decide whether `/api/ai/chat` should be public; if not, add `firebase-admin` token verification.
 4. Promote CSP from Report-Only after reviewing reports.
 5. Move rate limiting to shared storage before production scale.
+
+---
+
+## 9. CHANGE-006 — AEGIS-008 · Server-side security logging
+
+**Authorization:** user approved, 2026-09-07. Gate 4. Purely additive — no existing control altered.
+
+| Field | Value |
+|---|---|
+| Files | `web/app/lib/securityLog.ts` (new); wired into all five API routes |
+| Change | Structured single-line JSON security events on every rejection path: `input_validation_failed`, `rate_limit_exceeded`, `malformed_request`, `upstream_failure` |
+| Framework | NIST CSF DE.AE-3, DE.CM-1 · CIS Control 8 |
+| Rollback | `git revert` |
+
+Closes the detection gap identified in PATH-1: exploitation of AEGIS-001 or AEGIS-002 previously left **no audit trail**. Each event carries the responsible finding ID, so an alert maps straight back to this report.
+
+**Privacy and secret-safety by construction:**
+- Values pass through a redactor modelled on the patterns already proven in `aurora-cli/src/security/secretRedactor.ts` (consistent scrubbing across web and CLI).
+- Full request URLs, request bodies, and AI prompt content are **never** logged — only a rejection reason.
+- Client IPs are truncated (`203.0.113.45` → `203.0.x.x`), keeping events correlatable without retaining a full identifier.
+- Fields are length-bounded so a large input cannot flood the log stream.
+- Every call is wrapped so a broken log sink can never break a request.
+
+**A10 verification — 16/16 passed:**
+
+```
+SECRET REDACTION   tmdb api_key / bearer / github PAT / JWT / password / userinfo URL  -> all [REDACTED]
+DETECTION VALUE    traversal payload "550/../../account" preserved
+FLOOD BOUNDED      5000-char field truncated to 214
+PRIVACY            ipv4 -> 203.0.x.x   ipv6 -> 2001:db8::/32
+STRUCTURE          valid single-line JSON; event/route/outcome/finding present
+RESILIENCE         survives a broken log sink without throwing
+```
+
+**End-to-end confirmation** against the running server — attack traffic produced this trail:
+
+```json
+{"event":"input_validation_failed","route":"/api/movie","reason":"non_numeric_movie_id","detail":"550/../../account","finding":"AEGIS-001","client":"127.0.x.x"}
+{"event":"input_validation_failed","route":"/api/trailer","detail":"550?api_key=[REDACTED]","finding":"AEGIS-001","client":"127.0.x.x"}
+{"event":"input_validation_failed","route":"/api/ai/chat","reason":"The requested model is not available.","finding":"AEGIS-002","client":"127.0.x.x"}
+{"event":"rate_limit_exceeded","route":"/api/ai/chat","finding":"AEGIS-003","client":"127.0.x.x"}
+```
+
+Note the second entry: the injected `api_key` value was scrubbed while the **attack shape was preserved**. Defenders see the attempt; the secret never reaches disk.
+
+**Regression:** AEGIS-001 harness re-run **13/13 pass**; web lint, `tsc --noEmit`, and production compile all clean.
+
+**Status: CLOSED/VERIFIED.**
+
+### Updated residual risk
+
+- Logs are emitted but **nothing alerts on them yet**. Route `rate_limit_exceeded` and `finding:"AEGIS-001"` events into your monitoring platform to convert forensics into detection.
+- AEGIS-003 remains PARTIAL (no server-side auth) and AEGIS-007 remains OPEN — both still need your decisions.

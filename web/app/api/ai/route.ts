@@ -3,6 +3,9 @@ import {
   clientKey,
   rateLimit,
 } from "@/app/lib/rateLimit";
+import {
+  logSecurityEvent,
+} from "@/app/lib/securityLog";
 
 /*
  * AEGIS-005: bound the accepted prompt length. This endpoint returns a static
@@ -21,6 +24,16 @@ export async function POST(request: Request) {
   );
 
   if (!limit.allowed) {
+    logSecurityEvent(
+      {
+        event: "rate_limit_exceeded",
+        route: "/api/ai",
+        outcome: "blocked",
+        finding: "AEGIS-003",
+      },
+      clientKey(request)
+    );
+
     return NextResponse.json(
       { error: "Too many requests. Please slow down." },
       {
@@ -44,6 +57,17 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
+    logSecurityEvent(
+      {
+        event: "malformed_request",
+        route: "/api/ai",
+        outcome: "blocked",
+        reason: "invalid_json",
+        finding: "AEGIS-005",
+      },
+      clientKey(request)
+    );
+
     return NextResponse.json(
       { error: "Request body must be valid JSON." },
       { status: 400 }
@@ -58,6 +82,17 @@ export async function POST(request: Request) {
       : undefined;
 
   if (typeof prompt !== "string") {
+    logSecurityEvent(
+      {
+        event: "input_validation_failed",
+        route: "/api/ai",
+        outcome: "blocked",
+        reason: "prompt_not_a_string",
+        finding: "AEGIS-005",
+      },
+      clientKey(request)
+    );
+
     return NextResponse.json(
       { error: "A 'prompt' string is required." },
       { status: 400 }
@@ -65,6 +100,17 @@ export async function POST(request: Request) {
   }
 
   if (prompt.length > MAX_PROMPT_LENGTH) {
+    logSecurityEvent(
+      {
+        event: "input_validation_failed",
+        route: "/api/ai",
+        outcome: "blocked",
+        reason: "prompt_too_long",
+        finding: "AEGIS-005",
+      },
+      clientKey(request)
+    );
+
     return NextResponse.json(
       { error: "Prompt is too long." },
       { status: 413 }

@@ -3,6 +3,9 @@ import {
   clientKey,
   rateLimit,
 } from "@/app/lib/rateLimit";
+import {
+  logSecurityEvent,
+} from "@/app/lib/securityLog";
 import type { TmdbVideo } from "../../types/media";
 
 const API_KEY = process.env.TMDB_API_TOKEN;
@@ -22,6 +25,16 @@ export async function GET(request: NextRequest) {
   );
 
   if (!limit.allowed) {
+    logSecurityEvent(
+      {
+        event: "rate_limit_exceeded",
+        route: "/api/trailer",
+        outcome: "blocked",
+        finding: "AEGIS-003",
+      },
+      clientKey(request)
+    );
+
     return NextResponse.json(
       { error: "Too many requests. Please slow down." },
       {
@@ -50,6 +63,18 @@ export async function GET(request: NextRequest) {
      * upstream URL path. See app/api/movie/route.ts for the full rationale.
      */
     if (!MOVIE_ID_PATTERN.test(id)) {
+      logSecurityEvent(
+        {
+          event: "input_validation_failed",
+          route: "/api/trailer",
+          outcome: "blocked",
+          reason: "non_numeric_movie_id",
+          detail: id,
+          finding: "AEGIS-001",
+        },
+        clientKey(request)
+      );
+
       return NextResponse.json(
         { error: "Movie ID must be numeric" },
         { status: 400 }
@@ -91,7 +116,18 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error(error);
+    logSecurityEvent(
+      {
+        event: "upstream_failure",
+        route: "/api/trailer",
+        outcome: "error",
+        detail:
+          error instanceof Error
+            ? error.message
+            : "unknown error",
+      },
+      clientKey(request)
+    );
 
     return NextResponse.json(
       { error: "Internal Server Error" },

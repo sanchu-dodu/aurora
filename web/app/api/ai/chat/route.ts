@@ -5,6 +5,9 @@ import {
   clientKey,
   rateLimit,
 } from "@/app/lib/rateLimit";
+import {
+  logSecurityEvent,
+} from "@/app/lib/securityLog";
 import type { ChatMessage } from "@/app/lib/ai/types";
 
 /*
@@ -150,6 +153,16 @@ export async function POST(request: NextRequest) {
   );
 
   if (!limit.allowed) {
+    logSecurityEvent(
+      {
+        event: "rate_limit_exceeded",
+        route: "/api/ai/chat",
+        outcome: "blocked",
+        finding: "AEGIS-003",
+      },
+      clientKey(request)
+    );
+
     return NextResponse.json(
       { error: "Too many requests. Please slow down." },
       {
@@ -168,6 +181,17 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
+    logSecurityEvent(
+      {
+        event: "malformed_request",
+        route: "/api/ai/chat",
+        outcome: "blocked",
+        reason: "invalid_json",
+        finding: "AEGIS-002",
+      },
+      clientKey(request)
+    );
+
     return NextResponse.json(
       { error: "Request body must be valid JSON." },
       { status: 400 }
@@ -177,6 +201,21 @@ export async function POST(request: NextRequest) {
   const validated = validate(body);
 
   if (typeof validated === "string") {
+    /*
+     * AEGIS-008: the rejection reason is recorded, never the conversation
+     * content. Prompt text is user data and must not enter logs.
+     */
+    logSecurityEvent(
+      {
+        event: "input_validation_failed",
+        route: "/api/ai/chat",
+        outcome: "blocked",
+        reason: validated,
+        finding: "AEGIS-002",
+      },
+      clientKey(request)
+    );
+
     return NextResponse.json(
       { error: validated },
       { status: 400 }
@@ -206,11 +245,18 @@ export async function POST(request: NextRequest) {
      * AEGIS-002: log server-side, but never return upstream error detail to
      * the caller (it can disclose internal hosts, ports, and model names).
      */
-    console.error(
-      "[aurora] AI chat request failed:",
-      error instanceof Error
-        ? error.message
-        : "unknown error"
+    logSecurityEvent(
+      {
+        event: "upstream_failure",
+        route: "/api/ai/chat",
+        outcome: "error",
+        detail:
+          error instanceof Error
+            ? error.message
+            : "unknown error",
+        finding: "AEGIS-002",
+      },
+      clientKey(request)
     );
 
     return NextResponse.json(

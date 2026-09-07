@@ -3,6 +3,9 @@ import {
   clientKey,
   rateLimit,
 } from "@/app/lib/rateLimit";
+import {
+  logSecurityEvent,
+} from "@/app/lib/securityLog";
 
 const API_KEY = process.env.TMDB_API_TOKEN;
 const BASE_URL = "https://api.themoviedb.org/3";
@@ -19,6 +22,16 @@ export async function GET(request: Request) {
   );
 
   if (!limit.allowed) {
+    logSecurityEvent(
+      {
+        event: "rate_limit_exceeded",
+        route: "/api/search",
+        outcome: "blocked",
+        finding: "AEGIS-003",
+      },
+      clientKey(request)
+    );
+
     return NextResponse.json(
       { error: "Too many requests. Please slow down." },
       {
