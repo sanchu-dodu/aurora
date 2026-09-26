@@ -79,6 +79,16 @@ test(
   }
 );
 
+test("package resolve passes the registry digest option through to validation", async () => {
+  await assert.rejects(
+    createProgram().parseAsync([
+      "node", "aurora", "package", "resolve", "alpha",
+      "--registry-digest", "invalid",
+    ]),
+    /expected registry digest must be a lowercase SHA-256 digest/u
+  );
+});
+
 test(
   "Command registry applies conservative top-level activation defaults",
   () => {

@@ -59,13 +59,38 @@ registerCommand({
 
     pkg
       .command("resolve")
-      .description("Resolve package dependencies")
+      .description(
+        "Resolve a package from the active verified official registry"
+      )
       .argument("<package>")
+      .option(
+        "--version <version>",
+        "Resolve one exact semantic version"
+      )
+      .option(
+        "--range <range>",
+        "Resolve the greatest active version satisfying a semantic-version range"
+      )
+      .option(
+        "--registry-digest <digest>",
+        "Require the exact registry SHA-256 digest obtained from a trusted source"
+      )
       .action(
-        async (packageId: string) => {
+        async (
+          packageId: string,
+          options: {
+            readonly version?:
+              string;
+            readonly range?:
+              string;
+            readonly registryDigest?:
+              string;
+          }
+        ) => {
 
           await packageResolveCommand(
-            packageId
+            packageId,
+            options
           );
 
         }

@@ -1,6 +1,5 @@
 import { listPackagesCommand } from "./listPackages.js";
 import { testManifest } from "./testManifest.js";
-import { testResolver } from "./testResolver.js";
 import { installPackage } from "./installCommand.js";
 import { updatePackage } from "./updateCommand.js";
 import { searchPackages } from "./search/searchCommand.js";
@@ -13,6 +12,7 @@ import { publishPackage } from "./publish/publishCommand.js";
 import { proposeOfficialRegistryRelease } from "./registry/officialRegistryReleaseCommand.js";
 import { finalizeOfficialRegistryRelease } from "./registry/officialRegistryReleaseFinalizationCommand.js";
 import { activateOfficialRegistryRelease } from "./registry/officialRegistryReleaseActivationCommand.js";
+import { resolveActiveOfficialRegistryPackage } from "./registry/officialRegistryActiveCommand.js";
 
 export async function packageListCommand(): Promise<void> {
 
@@ -27,11 +27,17 @@ export async function packageTestManifestCommand(): Promise<void> {
 }
 
 export async function packageResolveCommand(
-  packageId: string
+  packageId: string,
+  options: {
+    readonly version?: string;
+    readonly range?: string;
+    readonly registryDigest?: string;
+  } = {}
 ): Promise<void> {
 
-  await testResolver(
-    packageId
+  await resolveActiveOfficialRegistryPackage(
+    packageId,
+    options
   );
 
 }
