@@ -384,6 +384,33 @@ function assertReceiptShape(
   }
 }
 
+export function parseOfficialRegistryActivationReceipt(
+  value: unknown
+): OfficialRegistryActivationReceipt {
+  assertReceiptShape(
+    value
+  );
+
+  return Object.freeze({
+    kind:
+      value.kind,
+    schemaVersion:
+      value.schemaVersion,
+    sequence:
+      value.sequence,
+    snapshotDigest:
+      value.snapshotDigest,
+    previousSnapshotDigest:
+      value.previousSnapshotDigest,
+    historyDigest:
+      value.historyDigest,
+    predecessorHistoryDigest:
+      value.predecessorHistoryDigest,
+    historyLength:
+      value.historyLength,
+  });
+}
+
 async function readExactRegularFile(
   file: string,
   expected: Buffer,
@@ -574,13 +601,14 @@ async function readCurrentReceipt(
     );
   }
 
-  assertReceiptShape(
-    value
-  );
+  const receipt =
+    parseOfficialRegistryActivationReceipt(
+      value
+    );
 
   const canonical =
     canonicalBytes(
-      value
+      receipt
     );
 
   if (!bytes.equals(canonical)) {
@@ -591,7 +619,7 @@ async function readCurrentReceipt(
 
   return {
     receipt:
-      Object.freeze(value),
+      receipt,
     bytes,
   };
 }

@@ -153,6 +153,16 @@ Aurora verifies the complete chain and successor again, creates a portable canon
 
 Use `--dry-run` to authenticate the candidate without creating `.aurora` or changing live state. Activation is idempotent for the exact active generation and fails closed on rollback, forks, skipped sequences, split histories, unexpected release files, noncanonical bytes, altered generations, forged pointers, or concurrent state drift. It does not download packages, upload registry data, sign releases, access private keys, delete earlier generations, or edit the supplied history file. See [Verified official registry activation](docs/official-registry-activation.md) for the storage and recovery contract.
 
+## Verified active registry resolution
+
+`aurora package resolve <package>` now resolves from the generation selected by `.aurora/official-registry/current.json`. Omit a selector for the greatest active version, use `--version <version>` for an exact semantic version, or use `--range <range>` for the greatest active version satisfying a semantic-version range. `--version` and `--range` are mutually exclusive.
+
+Every invocation reopens the selected immutable generation, requires its exact file set and canonical bytes, checks the activation and history digests, and replays the complete signed registry chain through Aurora's configured trust policy. The resolver accepts the snapshot only when its cryptographic identity, sequence, predecessor, and complete history all agree with the active receipt. Missing state, malformed pointers, tampered generations, untrusted signatures, inconsistent history, and versions revoked in the selected snapshot fail closed.
+
+Use `--registry-digest <digest>` to require an exact snapshot identity obtained through a trusted channel. This rejects an older valid snapshot or a different signed fork when its digest differs from the supplied pin. Without a pin, the reader proves authenticity and internal continuity, not freshness: a local attacker able to restore an entire older valid generation can replay it. Resolution cannot discover newer releases or revocations while offline.
+
+Resolution is read-only. It does not create `.aurora`, contact the network, download an archive, modify registry state, or install or execute package code. See [Verified active official registry resolution](docs/official-registry-consumption.md) for the consumer trust boundary.
+
 ## Extension worker prototype
 
 The bundled Hello extension runs outside the main Aurora process through the Extension Worker v1 prototype. Aurora validates a strict manifest, scrubs inherited environment data, brokers declared capabilities, and enforces time, memory, output, and per-extension concurrency limits.
