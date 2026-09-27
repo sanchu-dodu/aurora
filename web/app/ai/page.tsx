@@ -24,15 +24,12 @@ export default function AIPage() {
     try {
       // Call Aurora AI
       const aiRes = await fetch("/api/ai", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({ prompt }),
-});
-
-console.log(await aiRes.text());
-return;
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ prompt }),
+      });
 
       const aiData = await aiRes.json();
 
