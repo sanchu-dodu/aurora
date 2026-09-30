@@ -7,6 +7,7 @@ import {
   packageTestManifestCommand,
   packageResolveCommand,
   packageInstallCommand,
+  packageInstallOfficialCommand,
   packageUpdateCommand,
   packageSearchCommand,
   packageInfoCommand,
@@ -109,6 +110,23 @@ registerCommand({
 
         }
       );
+
+    pkg
+      .command("install-official")
+      .description("Install a locked, authenticated package set from the active official registry")
+      .argument("<package>")
+      .requiredOption("--registry-digest <digest>", "Trusted exact registry SHA-256 digest")
+      .option("--version <version>", "Select an exact version for a new lock")
+      .option("--range <range>", "Select a compatible version for a new lock")
+      .option("--offline", "Use only the existing authenticated lock and verified artifact cache")
+      .action(async (packageId: string, options: {
+        readonly registryDigest: string;
+        readonly version?: string;
+        readonly range?: string;
+        readonly offline?: boolean;
+      }) => {
+        await packageInstallOfficialCommand(packageId, options);
+      });
 
     pkg
       .command("update")

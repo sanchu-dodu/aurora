@@ -480,6 +480,19 @@ export class PackageInstaller {
           this.projectRoot
         ).readExisting();
 
+      // Official installs may skip execution for an installed package only
+      // after its current receipt, lock, and owned files have been verified
+      // under the lifecycle lock. The cache alone is not installation proof.
+      for (const packageName of installationOrder) {
+        const locked = this.lockedOfficialPackages.get(packageName);
+        if (locked !== undefined && installed[packageName] !== undefined) {
+          await loadVerifiedLockedOfficialRegistryManifest(
+            locked, locked.extracted.stagingPath, this.projectRoot
+          );
+          await new InstalledStateVerifier().verify(packageName, this.projectRoot);
+        }
+      }
+
       checkConflicts(
         manifests,
         installed

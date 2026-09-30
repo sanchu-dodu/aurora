@@ -33,6 +33,7 @@ import {
 } from "../lock/lockSchema.js";
 
 import type {
+  LockFile,
   OfficialRegistryPackageLockEntry,
 } from "../lock/lockSchema.js";
 
@@ -405,6 +406,25 @@ export class OfficialRegistryPackageLocker {
         error
       );
     }
+  }
+
+  async lockMissingSet(
+    extractedArtifacts: readonly ExtractedOfficialRegistryArtifact[],
+    expected: LockFile
+  ): Promise<readonly LockedOfficialRegistryPackage[]> {
+    if (extractedArtifacts.length === 0) {
+      throw new TypeError("Expected at least one authentic extracted artifact.");
+    }
+    const prepared = [];
+    for (const extracted of extractedArtifacts) {
+      prepared.push(await this.prepare(extracted));
+    }
+    await this.lockManager.registerMissingOfficialSet(
+      prepared.map(candidate => candidate.entry),
+      expected
+    );
+    // Re-read and bind persisted identities, not just in-memory structure.
+    return this.bindExistingSet(extractedArtifacts);
   }
 
   async bindExistingSet(

@@ -89,6 +89,14 @@ test("package resolve passes the registry digest option through to validation", 
   );
 });
 
+test("package install-official requires a trusted digest and validates its options", async () => {
+  const args = ["node", "aurora", "package", "install-official", "alpha"];
+  await assert.rejects(createProgram().parseAsync(args), { code: "commander.missingMandatoryOptionValue" });
+  await assert.rejects(createProgram().parseAsync([...args, "--registry-digest", "invalid"]), /registry-digest/);
+  await assert.rejects(createProgram().parseAsync([...args, "--registry-digest", "a".repeat(64), "--offline", "--version", "1.0.0"]), /offline installation/);
+  assert.equal(getCommandActivation("package", ["install-official"]), "runtime");
+});
+
 test(
   "Command registry applies conservative top-level activation defaults",
   () => {
@@ -343,6 +351,7 @@ test(
         "finalize-release",
         "info",
         "install",
+        "install-official",
         "list",
         "manifest",
         "publish",
