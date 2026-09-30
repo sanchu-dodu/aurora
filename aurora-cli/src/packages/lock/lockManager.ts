@@ -259,4 +259,44 @@ export class LockManager {
       this.lock.release();
     }
   }
+
+  // Publish a verified install plan once, without replacing existing
+  // selections or silently merging a concurrently changed lock.
+  async registerMissingOfficialSet(
+    entries: readonly OfficialRegistryPackageLockEntry[],
+    expected: LockFile
+  ): Promise<void> {
+    const expectedText = JSON.stringify(normalizeLockFile(expected));
+    const parsed = entries.map(parseOfficialRegistryPackageLockEntry);
+    if (
+      parsed.length === 0 ||
+      new Set(parsed.map(entry => entry.packageId)).size !== parsed.length
+    ) {
+      throw lockFailure("the official install set must contain unique package identities.");
+    }
+    await this.lock.acquire();
+    try {
+      const current = await this.readUnlocked();
+      if (JSON.stringify(current) !== expectedText) {
+        throw lockFailure("aurora.lock changed while the official install plan was being prepared.");
+      }
+      let changed = false;
+      for (const entry of parsed) {
+        const existing = current.packages[entry.packageId];
+        if (existing !== undefined) {
+          if (JSON.stringify(existing) !== JSON.stringify(entry)) {
+            throw lockFailure(`official install cannot replace the existing lock for '${entry.packageId}'.`);
+          }
+        } else {
+          current.packages[entry.packageId] = entry;
+          changed = true;
+        }
+      }
+      if (changed) {
+        await this.writeUnlocked(current);
+      }
+    } finally {
+      this.lock.release();
+    }
+  }
 }

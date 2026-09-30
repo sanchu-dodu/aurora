@@ -13,6 +13,10 @@ import { proposeOfficialRegistryRelease } from "./registry/officialRegistryRelea
 import { finalizeOfficialRegistryRelease } from "./registry/officialRegistryReleaseFinalizationCommand.js";
 import { activateOfficialRegistryRelease } from "./registry/officialRegistryReleaseActivationCommand.js";
 import { resolveActiveOfficialRegistryPackage } from "./registry/officialRegistryActiveCommand.js";
+import {
+  installActiveOfficialRegistryPackage,
+  type InstallActiveOfficialRegistryPackageOptions,
+} from "./registry/officialRegistryInstallCommand.js";
 
 export async function packageListCommand(): Promise<void> {
 
@@ -134,6 +138,13 @@ export async function packagePublishCommand(
     options
   );
 
+}
+
+export async function packageInstallOfficialCommand(
+  packageId: string,
+  options: InstallActiveOfficialRegistryPackageOptions
+): Promise<void> {
+  await installActiveOfficialRegistryPackage(packageId, options);
 }
 
 export async function packageProposeReleaseCommand(

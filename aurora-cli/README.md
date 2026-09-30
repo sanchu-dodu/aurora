@@ -163,6 +163,12 @@ Use `--registry-digest <digest>` to require an exact snapshot identity obtained 
 
 Resolution is read-only. It does not create `.aurora`, contact the network, download an archive, modify registry state, or install or execute package code. See [Verified active official registry resolution](docs/official-registry-consumption.md) for the consumer trust boundary.
 
+## Verified official package installation
+
+`aurora package install-official <package> --registry-digest <trusted-sha256>` connects the active authenticated registry to verified cache/download, safe extraction, dependency selection, full lock preparation, and transactional installation. Existing official locks are preserved; `--version` or `--range` select new locks. `--offline` requires the complete existing lock and verified cache and disables package network grants. Missing or untrusted inputs fail closed without a local/unsigned fallback.
+
+This command does not fetch registry releases, upgrade existing locks, upload packages, or install npm dependencies. Verified cache entries and a prepared lock may remain after later execution failure; project mutations use transactional rollback. See [Pinned official registry installation](docs/official-registry-installation.md) for prerequisites, resource limits, offline behavior, and recovery boundaries.
+
 ## Extension worker prototype
 
 The bundled Hello extension runs outside the main Aurora process through the Extension Worker v1 prototype. Aurora validates a strict manifest, scrubs inherited environment data, brokers declared capabilities, and enforces time, memory, output, and per-extension concurrency limits.
