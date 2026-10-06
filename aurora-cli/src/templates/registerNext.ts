@@ -7,9 +7,9 @@ registerTemplate({
   name: "nextjs",
   displayName:
     "Aurora Next.js Starter",
-  version: "1.0.0",
+  version: "1.1.0",
   description:
-    "Production-ready Next.js TypeScript starter template for Aurora CLI",
+    "Buildable Next.js TypeScript starter with pinned direct dependencies",
   author: "Aurora",
   framework: "nextjs",
   path:

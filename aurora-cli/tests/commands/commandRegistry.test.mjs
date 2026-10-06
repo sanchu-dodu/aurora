@@ -5,6 +5,8 @@ import { Command } from "commander";
 
 import "../../dist/commands/initRegistration.js";
 import "../../dist/commands/doctorRegistration.js";
+import "../../dist/commands/projectRegistration.js";
+import "../../dist/commands/solutionRegistration.js";
 import "../../dist/commands/listRegistration.js";
 import "../../dist/commands/pluginRegistration.js";
 import "../../dist/commands/configRegistration.js";
@@ -25,8 +27,10 @@ import {
 
 const expectedTopLevelCommands = [
   "apply",
+  "capability",
   "completion",
   "config",
+  "create",
   "doctor",
   "feature",
   "generate",
@@ -35,7 +39,9 @@ const expectedTopLevelCommands = [
   "package",
   "plan",
   "plugin",
+  "project",
   "recovery",
+  "solution",
   "template",
 ];
 
@@ -102,8 +108,10 @@ test(
   () => {
     const expectedActivations = {
       apply: "none",
+      capability: "none",
       completion: "none",
       config: "none",
+      create: "none",
       doctor: "none",
       feature: "runtime",
       generate: "runtime",
@@ -112,7 +120,9 @@ test(
       package: "runtime",
       plan: "none",
       plugin: "catalog",
+      project: "none",
       recovery: "runtime",
+      solution: "none",
       template: "runtime",
     };
 
@@ -208,6 +218,8 @@ test(
         ["list"],
         "none",
       ],
+      ["recovery", ["plans"], "none"],
+      ["recovery", ["plan"], "none"],
     ];
 
     for (
@@ -323,6 +335,9 @@ test(
     const program = createProgram();
 
     const expectedSubcommands = {
+      solution: ["list"],
+      capability: ["list", "plan", "verify"],
+      project: ["inspect"],
       config: [
         "get",
         "list",
@@ -367,6 +382,8 @@ test(
 
       recovery: [
         "list",
+        "plan",
+        "plans",
         "rollback",
       ],
 

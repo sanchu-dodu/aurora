@@ -17,9 +17,6 @@ const SENSITIVE_KEY_PARTS = [
   "token",
 ] as const;
 
-const AUTHENTICATED_URL_PATTERN =
-  /([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+)(?::[^\s/@]*)?@/giu;
-
 const SENSITIVE_QUERY_PATTERN =
   /([?&](?:access_token|api[_-]?key|auth|credential|password|secret|signature|token)=)[^&#\s]*/giu;
 
@@ -63,11 +60,7 @@ export function redactText(
   explicitValues:
     readonly string[] = []
 ): string {
-  let redacted = value
-    .replace(
-      AUTHENTICATED_URL_PATTERN,
-      `$1${REDACTED_VALUE}@`
-    )
+  let redacted = redactAuthenticatedUrls(value)
     .replace(
       SENSITIVE_QUERY_PATTERN,
       `$1${REDACTED_VALUE}`
@@ -113,6 +106,63 @@ export function redactText(
   }
 
   return redacted;
+}
+
+/**
+ * Search for authority delimiters first. A scheme-prefix regular expression can
+ * retry at every letter of a long non-URL string and scan the remaining suffix
+ * each time. Each scheme and authority scan stops at a neighboring delimiter
+ * or boundary, so characters are inspected a bounded number of times.
+ */
+function redactAuthenticatedUrls(value: string): string {
+  const parts: string[] = [];
+  let searchFrom = 0;
+  let copiedUntil = 0;
+  while (searchFrom < value.length) {
+    const delimiter = value.indexOf("://", searchFrom);
+    if (delimiter === -1) break;
+    searchFrom = delimiter + 3;
+
+    let schemeStart = delimiter;
+    while (schemeStart > copiedUntil && isSchemeCharacter(value.charCodeAt(schemeStart - 1))) {
+      schemeStart--;
+    }
+    // The previous expression accepted the first scheme letter in this run,
+    // including custom schemes preceded by punctuation or digits.
+    while (schemeStart < delimiter && !isSchemeLetter(value.charCodeAt(schemeStart))) {
+      schemeStart++;
+    }
+    if (schemeStart === delimiter) continue;
+
+    const authorityStart = delimiter + 3;
+    let authorityEnd = authorityStart;
+    while (authorityEnd < value.length && value[authorityEnd] !== "@" &&
+        value[authorityEnd] !== "/" && !/\s/u.test(value[authorityEnd]!)) {
+      authorityEnd++;
+    }
+    // A nonempty username is required. A password may be empty or contain
+    // additional colons; whitespace and slash terminate the authority.
+    if (authorityEnd === authorityStart || value[authorityStart] === ":" ||
+        value[authorityEnd] !== "@") continue;
+
+    parts.push(value.slice(copiedUntil, authorityStart), `${REDACTED_VALUE}@`);
+    copiedUntil = authorityEnd + 1;
+    searchFrom = copiedUntil;
+  }
+  if (parts.length === 0) return value;
+  parts.push(value.slice(copiedUntil));
+  return parts.join("");
+}
+
+function isSchemeLetter(code: number): boolean {
+  // Preserve the two additional characters matched by [a-z] under /iu.
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122) ||
+    code === 0x017f || code === 0x212a;
+}
+
+function isSchemeCharacter(code: number): boolean {
+  return isSchemeLetter(code) || (code >= 48 && code <= 57) ||
+    code === 43 || code === 45 || code === 46;
 }
 
 export function redactSensitiveValue(

@@ -37,6 +37,10 @@ const SAFE_ENVIRONMENT_NAMES =
     "CI",
     "COLORTERM",
     "COMSPEC",
+    "COREPACK_ENABLE_NETWORK",
+    "COREPACK_ENABLE_AUTO_PIN",
+    "COREPACK_ENABLE_PROJECT_SPEC",
+    "COREPACK_ENV_FILE",
     "FORCE_COLOR",
     "HOME",
     "HTTPS_PROXY",
@@ -64,6 +68,7 @@ const SAFE_ENVIRONMENT_NAMES =
     "TMP",
     "USERPROFILE",
     "WINDIR",
+    "YARN_IGNORE_PATH",
   ]);
 
 const SECRET_ENVIRONMENT_NAME =
@@ -88,6 +93,9 @@ export type ProcessOutputMode =
 
 export interface SafeProcessRequest {
   command: SafeProcessCommand;
+
+  /** Diagnostics may not load executables or Windows shim entrypoints from this root. */
+  excludedExecutableRoot?: string;
 
   args?: readonly string[];
 
@@ -204,7 +212,9 @@ export async function runProcess(
     resolveInvocation(
       command,
       args,
-      environment
+      environment,
+      request.excludedExecutableRoot === undefined ? undefined :
+        resolveWorkingDirectory(request.excludedExecutableRoot)
     );
 
   return new Promise(
@@ -767,9 +777,11 @@ function collectRedactions(
 function resolveInvocation(
   command: SafeProcessCommand,
   args: string[],
-  environment: NodeJS.ProcessEnv
+  environment: NodeJS.ProcessEnv,
+  excludedRoot?: string
 ): ResolvedInvocation {
   if (command === "node") {
+    assertExecutableOutsideRoot(process.execPath, excludedRoot);
     return {
       executable:
         process.execPath,
@@ -780,7 +792,8 @@ function resolveInvocation(
   const executable =
     findExecutable(
       command,
-      environment
+      environment,
+      excludedRoot
     );
 
   if (
@@ -788,9 +801,10 @@ function resolveInvocation(
     command === "npm"
   ) {
     const npmCli =
-      findNpmCli(executable);
+      findNpmCli(executable, excludedRoot);
 
     if (npmCli) {
+      assertExecutableOutsideRoot(process.execPath, excludedRoot);
       return {
         executable:
           process.execPath,
@@ -821,10 +835,12 @@ function resolveInvocation(
 
   const script =
     findNodeShimScript(
-      executable
+      executable,
+      excludedRoot
     );
 
   if (script) {
+    assertExecutableOutsideRoot(process.execPath, excludedRoot);
     return {
       executable:
         process.execPath,
@@ -844,7 +860,8 @@ function resolveInvocation(
 
 function findExecutable(
   command: SafeProcessCommand,
-  environment: NodeJS.ProcessEnv
+  environment: NodeJS.ProcessEnv,
+  excludedRoot?: string
 ): string {
   const pathValue =
     getEnvironmentValue(
@@ -878,7 +895,7 @@ function findExecutable(
       path.delimiter
     )
   ) {
-    if (!directory) {
+    if (!directory || (excludedRoot !== undefined && !path.isAbsolute(directory))) {
       continue;
     }
 
@@ -906,8 +923,8 @@ function findExecutable(
             candidate
           ).isFile()
         ) {
-          return fs.realpathSync
-            .native(candidate);
+          const canonical = fs.realpathSync.native(candidate);
+          if (!executableWithinRoot(canonical, excludedRoot)) return canonical;
         }
       } catch {
         continue;
@@ -923,7 +940,8 @@ function findExecutable(
 }
 
 function findNpmCli(
-  npmExecutable: string
+  npmExecutable: string,
+  excludedRoot?: string
 ): string | undefined {
   const candidates = [
     path.join(
@@ -966,7 +984,7 @@ function findNpmCli(
         ) === "npm-cli.js" &&
         fs.statSync(
           canonical
-        ).isFile()
+        ).isFile() && !executableWithinRoot(canonical, excludedRoot)
       ) {
         return canonical;
       }
@@ -979,7 +997,8 @@ function findNpmCli(
 }
 
 function findNodeShimScript(
-  executable: string
+  executable: string,
+  excludedRoot?: string
 ): string | undefined {
   let content: string;
 
@@ -1069,7 +1088,7 @@ function findNodeShimScript(
       if (
         fs.statSync(
           canonical
-        ).isFile()
+        ).isFile() && !executableWithinRoot(canonical, excludedRoot)
       ) {
         return canonical;
       }
@@ -1079,6 +1098,20 @@ function findNodeShimScript(
   }
 
   return undefined;
+}
+
+function executableWithinRoot(file: string, root?: string): boolean {
+  if (root === undefined) return false;
+  const relative = path.relative(root, file);
+  return relative === "" || (!path.isAbsolute(relative) && relative !== ".." &&
+    !relative.startsWith(`..${path.sep}`));
+}
+
+function assertExecutableOutsideRoot(file: string, root?: string): void {
+  if (root !== undefined && executableWithinRoot(fs.realpathSync.native(file), root)) {
+    throw processError(ErrorCodes.UNSAFE_PROCESS_REQUEST,
+      "Diagnostic executables must be outside the inspected project.");
+  }
 }
 
 function getEnvironmentValue(

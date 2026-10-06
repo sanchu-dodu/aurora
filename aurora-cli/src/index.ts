@@ -5,6 +5,8 @@ import {
 
 import "./commands/initRegistration.js";
 import "./commands/doctorRegistration.js";
+import "./commands/projectRegistration.js";
+import "./commands/solutionRegistration.js";
 import "./commands/listRegistration.js";
 import "./commands/pluginRegistration.js";
 import "./commands/configRegistration.js";

@@ -5,6 +5,10 @@ import { hostname } from "node:os";
 import path from "node:path";
 
 import {
+  assertNoPendingOperationJournals,
+} from "../../operations/operationJournal.js";
+
+import {
   ProjectPathBoundary,
 } from "../../security/projectPathBoundary.js";
 
@@ -57,6 +61,8 @@ export interface ProjectLifecycleLockOwner {
 export interface ProjectLifecycleLockOptions {
   readonly acquisitionTimeoutMs?: number;
   readonly pollIntervalMs?: number;
+  /** Reserved for explicit operation-plan recovery while holding this lock. */
+  readonly allowOperationRecovery?: boolean;
 }
 
 /**
@@ -74,6 +80,7 @@ export class ProjectLifecycleLock {
   private readonly localHostname: string;
   private readonly acquisitionTimeoutMs: number;
   private readonly pollIntervalMs: number;
+  private readonly allowOperationRecovery: boolean;
   private readonly token = randomUUID();
   private held = false;
   private releasing = false;
@@ -82,6 +89,11 @@ export class ProjectLifecycleLock {
     projectPath: string,
     options: ProjectLifecycleLockOptions
   ) {
+    this.allowOperationRecovery =
+      validateAllowOperationRecovery(
+        options.allowOperationRecovery
+      );
+
     this.pathBoundary =
       new ProjectPathBoundary(projectPath);
 
@@ -120,6 +132,33 @@ export class ProjectLifecycleLock {
       );
 
     await lock.acquireInternal();
+
+    if (!lock.allowOperationRecovery) {
+      try {
+        await assertNoPendingOperationJournals(
+          lock.projectRoot
+        );
+      }
+      catch (error) {
+        const guardFailure = new Error(
+          "Aurora project mutation is blocked by pending or unsafe operation-plan recovery metadata.",
+          { cause: error }
+        );
+
+        try {
+          await lock.release();
+        }
+        catch (releaseFailure) {
+          throw new AggregateError(
+            [guardFailure, releaseFailure],
+            "Aurora operation-plan recovery inspection failed and its lifecycle lock could not be released."
+          );
+        }
+
+        throw guardFailure;
+      }
+    }
+
     return lock;
   }
 
@@ -764,6 +803,21 @@ function validateTimeout(
   }
 
   return value;
+}
+
+function validateAllowOperationRecovery(
+  value: unknown
+): boolean {
+  if (
+    value !== undefined &&
+    typeof value !== "boolean"
+  ) {
+    throw new TypeError(
+      "Project lifecycle lock operation recovery option must be a boolean."
+    );
+  }
+
+  return value === true;
 }
 
 function validatePollInterval(

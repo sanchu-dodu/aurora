@@ -2,8 +2,8 @@
   "id": "nextjs",
   "name": "Aurora Next.js Starter",
   "displayName": "Next.js",
-  "version": "1.0.0",
-  "description": "Production-ready Next.js TypeScript starter template for Aurora CLI",
+  "version": "1.1.0",
+  "description": "Next.js TypeScript starter with pinned dependencies and a complete App Router root",
   "author": "Aurora",
   "framework": "nextjs",
   "language": [

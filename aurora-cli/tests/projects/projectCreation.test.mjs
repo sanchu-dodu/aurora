@@ -139,13 +139,27 @@ test(
 
       assert.equal(
         packageJson.dependencies.next,
-        "latest"
+        "16.3.8"
       );
 
       assert.equal(
         packageJson.dependencies.react,
-        "latest"
+        "19.3.0"
       );
+
+      assert.equal(packageJson.dependencies["react-dom"], "19.3.0");
+      assert.equal(packageJson.devDependencies.typescript, "7.0.2");
+      assert.equal(packageJson.engines.node, ">=22.15.0");
+      for (const version of Object.values({
+        ...packageJson.dependencies, ...packageJson.devDependencies,
+      })) {
+        assert.match(version, /^\d+\.\d+\.\d+$/);
+      }
+      const layout = await readFile(join(projectPath, "app", "layout.tsx"), "utf8");
+      assert.match(layout, /<html lang="en">/);
+      assert.match(layout, /<body>\{children\}<\/body>/);
+      assert.match(layout, /title: "external-project"/);
+      assert.doesNotMatch(layout, /\{\{PROJECT_NAME\}\}/);
 
       assert.equal(
         await exists(

@@ -18,6 +18,7 @@ export interface PlanConfigSetOptions {
 }
 
 export interface ApplyPlanOptions {
+  readonly project?: string;
   readonly yes?: boolean;
 
   readonly dryRun?: boolean;
@@ -76,7 +77,7 @@ export async function applyPlanCommand(
   const result =
     await service.apply(
       plan,
-      process.cwd(),
+      options.project ?? process.cwd(),
       {
         approved:
           options.yes === true,
