@@ -17,7 +17,8 @@ const cli = fileURLToPath(new URL("../../dist/index.js", import.meta.url));
 const statePath = ".aurora/solution.json";
 const routePath = "app/api/health/route.ts";
 async function workspace(t) {
-  const root = await mkdtemp(join(tmpdir(), "aurora-solutions-"));
+  // Match runtime path identity, including Windows short-name/casing aliases.
+  const root = await realpath(await mkdtemp(join(tmpdir(), "aurora-solutions-")));
   t.after(() => rm(root, { recursive: true, force: true }));
   return root;
 }

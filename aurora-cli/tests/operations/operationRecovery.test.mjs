@@ -173,7 +173,8 @@ function worker() {
 }
 
 async function fixture() {
-  const root = await fs.mkdtemp(join(tmpdir(), "aurora-operation-recovery-"));
+  // Windows runner TEMP aliases must match the canonical paths used by Aurora.
+  const root = await fs.realpath(await fs.mkdtemp(join(tmpdir(), "aurora-operation-recovery-")));
   await fs.writeFile(join(root, "first.txt"), "before-first\n", { mode: 0o640 });
   await fs.writeFile(join(root, "last.txt"), "before-last\n");
   const beforeMode = (await fs.stat(join(root, "first.txt"))).mode & 0o777;
@@ -237,7 +238,7 @@ async function snapshot(root) {
         result[relative] = { kind: "directory", mode: info.mode & 0o777 };
         await visit(target, relative);
       } else {
-        result[relative] = { kind: "file", mode: info.mode & 0o777, bytes: (await fs.readFile(target)).toString("hex") };
+        result[relative] = { kind: "file", mode: info.mode & 0o777, bytes: (await fs.readFile(target)).toString("hex") }; // codeql[js/file-system-race] -- Snapshot of an owned, quiescent test fixture, not a product recovery reader.
       }
     }
   }

@@ -266,6 +266,7 @@ export async function readOperationFile(
   assertStableRegularFile(before, maximumBytes);
   let handle: fs.FileHandle | undefined;
   try {
+    // codeql[js/file-system-race] -- Read-only open; exact descriptor/path snapshots are checked before any read and again afterward.
     handle = await fs.open(file,
       constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
     const opened = await handle.stat({ bigint: true });
@@ -298,6 +299,7 @@ function readOperationFileSync(file: string, maximumBytes: number): OperationFil
   try {
     const before = fsSync.lstatSync(file, { bigint: true });
     assertStableRegularFile(before, maximumBytes);
+    // codeql[js/file-system-race] -- Held descriptor is identity/state checked before bounded reads and rechecked afterward; path drift fails closed.
     descriptor = fsSync.openSync(file,
       constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
     const opened = fsSync.fstatSync(descriptor, { bigint: true });

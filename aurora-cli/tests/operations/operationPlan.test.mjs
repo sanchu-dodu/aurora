@@ -902,7 +902,7 @@ test(
         await stat(firstFile);
 
       assert.equal(
-        await readFile(firstFile, "utf8"),
+        await readFile(firstFile, "utf8"), // codeql[js/file-system-race] -- Owned temporary fixture; independently assert rollback content and permissions.
         "original\n"
       );
       assert.equal(

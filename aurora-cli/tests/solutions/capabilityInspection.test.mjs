@@ -345,7 +345,7 @@ test("changing a tracked source during its read is unsafe, not a digest comparis
   assert.equal(changed, true);
   assert.equal(onlyFile(report).status, "unsafe");
   assert.equal(onlyFile(report).actualSha256, undefined);
-  assert.equal(await readFile(target, "utf8"), "changed during inspection\n");
+  assert.equal(await readFile(target, "utf8"), "changed during inspection\n"); // codeql[js/file-system-race] -- Intentional mutation of an owned fixture; product inspection must reject it above.
 });
 
 test("large file identifiers that round to the same Number still reject a replacement descriptor", async t => {
