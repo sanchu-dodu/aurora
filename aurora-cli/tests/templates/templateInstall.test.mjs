@@ -136,6 +136,7 @@ test(
               canonicalProjectPath,
             generatedFiles: [
               ".gitignore",
+              "app\\layout.tsx",
               "app\\page.tsx",
               "aurora.config.json",
               "installed-template.txt",
@@ -176,7 +177,7 @@ test(
 
       assert.equal(
         packageJson.dependencies.next,
-        "latest"
+        "16.3.8"
       );
 
       const auroraConfig =

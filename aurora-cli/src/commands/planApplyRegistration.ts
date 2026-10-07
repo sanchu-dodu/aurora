@@ -68,6 +68,7 @@ registerCommand({
         "Validate and apply an exported Aurora operation plan"
       )
       .argument("<planFile>")
+      .option("--project <path>", "Apply to this project root (must match the plan)")
       .option(
         "--yes",
         "Explicitly approve plan mutations"

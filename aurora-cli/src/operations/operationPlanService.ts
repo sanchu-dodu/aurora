@@ -4,6 +4,8 @@ import {
 } from "node:crypto";
 
 import type {
+  Dir,
+  Dirent,
   Stats,
 } from "node:fs";
 import fs from "node:fs/promises";
@@ -13,9 +15,8 @@ import {
   AuroraError,
 } from "../errors/AuroraError.js";
 
-import {
-  FileTransaction,
-} from "../core/fileTransaction.js";
+import { DurableOperationTransaction } from "./durableOperationTransaction.js";
+import { assertOperationPlanAncestorCasing, isOperationErrno, readOperationFile } from "./operationJournal.js";
 
 import {
   ErrorCodes,
@@ -24,6 +25,20 @@ import {
 import {
   ProjectPathBoundary,
 } from "../security/projectPathBoundary.js";
+
+import {
+  LIFECYCLE_JOURNAL_MAX_BYTES,
+  parseLifecycleJournalEnvelope,
+  parseLifecycleTransactionId,
+} from "../packages/lifecycle/lifecycleJournalSchema.js";
+
+import {
+  ProjectLifecycleLock,
+} from "../packages/lifecycle/projectLifecycleLock.js";
+
+import {
+  parsePackageManifestBytes,
+} from "../packages/trust/packageManifestJson.js";
 
 import {
   MAX_PLAN_FILE_BYTES,
@@ -43,31 +58,53 @@ import {
 const DEFAULT_PLAN_LIFETIME_MS =
   15 * 60 * 1000;
 
+const MAX_LIFECYCLE_JOURNALS = 128;
+
 const SUPPORTED_OPERATION_KINDS =
   new Set<PlanOperation["kind"]>([
     "file.write",
   ]);
 
+interface PreparedFileWrite {
+  readonly operation: FileWriteOperation;
+  readonly target: string;
+}
+
 export interface PlanClock {
   now(): number;
 }
 
-export interface CreateFileWritePlanOptions {
-  readonly projectRoot: string;
-
+export interface FileWritePlanFileOptions {
   readonly relativePath: string;
 
   readonly content: string;
-
-  readonly summary: string;
-
-  readonly intent: string;
 
   readonly description?: string;
 
   readonly mode?: number;
 
   readonly directoryMode?: number;
+}
+
+export interface CreateFileWriteBatchPlanOptions {
+  readonly projectRoot: string;
+
+  readonly files: readonly FileWritePlanFileOptions[];
+
+  readonly summary: string;
+
+  readonly intent: string;
+
+  readonly lifetimeMs?: number;
+}
+
+export interface CreateFileWritePlanOptions
+  extends FileWritePlanFileOptions {
+  readonly projectRoot: string;
+
+  readonly summary: string;
+
+  readonly intent: string;
 
   readonly lifetimeMs?: number;
 }
@@ -95,23 +132,24 @@ export class OperationPlanService {
     options:
       CreateFileWritePlanOptions
   ): Promise<OperationPlan> {
+    return this.createFileWriteBatchPlan({
+      projectRoot: options.projectRoot,
+      files: [options],
+      summary: options.summary,
+      intent: options.intent,
+      ...(options.lifetimeMs === undefined
+        ? {}
+        : { lifetimeMs: options.lifetimeMs }),
+    });
+  }
+
+  async createFileWriteBatchPlan(
+    options: CreateFileWriteBatchPlanOptions
+  ): Promise<OperationPlan> {
     const boundary =
       new ProjectPathBoundary(
         options.projectRoot
       );
-
-    const relativePath =
-      normalizePlanPath(
-        options.relativePath
-      );
-
-    const target =
-      boundary.resolve(
-        relativePath
-      );
-
-    const expected =
-      await readFileState(target);
 
     const now = this.now();
     const lifetimeMs =
@@ -131,34 +169,38 @@ export class OperationPlanService {
       );
     }
 
-    const operation:
-      FileWriteOperation = {
-        id: "op-001",
-        kind: "file.write",
-        risk: "low",
-        description:
-          options.description ??
-          `Write ${relativePath}`,
-        path: relativePath,
-        content: options.content,
-        contentSha256:
-          sha256(options.content),
-        expected,
-        ...(options.mode === undefined
-          ? {}
-          : {
-              mode: options.mode,
-            }),
-        ...(options.directoryMode ===
-          undefined
-          ? {}
-          : {
-              directoryMode:
-                options.directoryMode,
-            }),
-      };
+    const operations: FileWriteOperation[] =
+      options.files.map((file, index) => {
+        const relativePath = normalizePlanPath(file.relativePath);
+        return {
+          id: `op-${String(index + 1).padStart(3, "0")}`,
+          kind: "file.write",
+          risk: "low",
+          description:
+            file.description ??
+            `Write ${relativePath}`,
+          path: relativePath,
+          content: file.content,
+          contentSha256:
+            sha256(file.content),
+          expected: { exists: false },
+          ...(file.mode === undefined
+            ? {}
+            : {
+                mode: file.mode,
+              }),
+          ...(file.directoryMode ===
+            undefined
+            ? {}
+            : {
+                directoryMode:
+                  file.directoryMode,
+              }),
+        };
+      });
 
-    return parseOperationPlan({
+    // Reject duplicate, overlapping, oversized, or invalid writes before inspecting files.
+    const plan = parseBoundedPlan({
       schemaVersion: 1,
       id:
         `plan-${randomUUID()}`,
@@ -176,10 +218,21 @@ export class OperationPlanService {
       intent: options.intent,
       summary: options.summary,
       requiresApproval: true,
-      operations: [
-        operation,
-      ],
+      operations,
     });
+
+    assertOperationPlanAncestorCasing(plan);
+
+    const prepared: FileWriteOperation[] = [];
+    for (const operation of plan.operations) {
+      if (operation.kind !== "file.write") continue;
+      prepared.push({
+        ...operation,
+        expected: await readFileState(boundary.resolve(operation.path)),
+      });
+    }
+
+    return parseBoundedPlan({ ...plan, operations: prepared });
   }
 
   async readPlanFile(
@@ -277,6 +330,8 @@ export class OperationPlanService {
   ): Promise<string> {
     const validated =
       parseOperationPlan(plan);
+
+    assertOperationPlanAncestorCasing(validated);
 
     const absolutePlanFile =
       path.resolve(planFile);
@@ -388,6 +443,8 @@ export class OperationPlanService {
     const validated =
       parseOperationPlan(plan);
 
+    assertOperationPlanAncestorCasing(validated);
+
     const startedAt =
       new Date(this.now())
         .toISOString();
@@ -424,23 +481,9 @@ export class OperationPlanService {
       );
     }
 
-    if (
-      this.now() >=
-      Date.parse(
-        validated.expiresAt
-      )
-    ) {
-      throw new AuroraError(
-        "Operation plan has expired.",
-        {
-          code:
-            ErrorCodes
-              .OPERATION_PLAN_EXPIRED,
-          suggestion:
-            "Generate and inspect a new plan from the current project state.",
-        }
-      );
-    }
+    assertPlanNotExpired(validated, this.now());
+
+    const directoryModes = new Map<string, number>();
 
     for (
       const operation
@@ -454,13 +497,94 @@ export class OperationPlanService {
           `Operation kind '${operation.kind}' does not have an enabled executor.`
         );
       }
+
+      if (operation.kind === "file.write") {
+        if (sha256(operation.content) !== operation.contentSha256) {
+          throw operationPlanError(
+            `Operation '${operation.id}' content digest does not match its plan.`
+          );
+        }
+        assertNotLifecycleAuthorityPath(operation.path);
+        if ((operation.mode !== undefined && (operation.mode & 0o400) === 0) ||
+            (operation.directoryMode !== undefined && (operation.directoryMode & 0o700) !== 0o700)) {
+          throw operationPlanError("File writes must retain owner read permission and directories must retain owner read/write/search permissions.");
+        }
+        if (operation.directoryMode !== undefined) {
+          const key = path.posix.dirname(operation.path).toLowerCase();
+          const previous = directoryModes.get(key);
+          if (previous !== undefined && previous !== operation.directoryMode) {
+            throw operationPlanError("File writes cannot request conflicting modes for a shared parent directory.");
+          }
+          directoryModes.set(key, operation.directoryMode);
+        }
+      }
     }
 
-    const prepared = [] as Array<{
-      operation:
-        FileWriteOperation;
-      target: string;
-    }>;
+    // Preview never acquires a lock or creates lifecycle metadata.
+    if (options.dryRun) {
+      await this.preflightFileWrites(validated, boundary);
+      return createOperationReport(
+        validated,
+        "dry-run",
+        startedAt,
+        new Date(this.now()).toISOString()
+      );
+    }
+
+    // Package lifecycle mutations and operation plans share one authority.
+    // In particular, rollback must finish before another writer can capture
+    // its before-images, otherwise a losing plan could remove a winner's file.
+    const lifecycleLock = await ProjectLifecycleLock
+      .acquire(boundary.projectRoot)
+      .catch(error => {
+        throw operationPlanError(
+          "Operation plan could not acquire the project lifecycle lock.", error
+        );
+      });
+
+    let failed = false;
+    let failure: unknown;
+    try {
+      assertPlanNotExpired(validated, this.now());
+
+      try {
+        await assertLifecycleJournalsCommitted(boundary);
+      } catch (error) {
+        throw operationPlanError(
+          "Operation plan is blocked by incomplete or invalid lifecycle recovery metadata. Inspect and recover the package lifecycle before retrying.",
+          error
+        );
+      }
+
+      await this.preflightFileWrites(validated, boundary);
+      await this.writePreparedPlan(validated, boundary, lifecycleLock);
+      return createOperationReport(
+        validated,
+        "applied",
+        startedAt,
+        new Date(this.now()).toISOString()
+      );
+    } catch (error) {
+      failed = true;
+      failure = error;
+      throw error;
+    } finally {
+      try {
+        await lifecycleLock.release();
+      } catch (error) {
+        throw operationPlanError(
+          "Operation plan could not release its lifecycle lock. Inspect the project lifecycle lock before retrying.",
+          failed ? new AggregateError([failure, error]) : error
+        );
+      }
+    }
+  }
+
+  private async preflightFileWrites(
+    validated: OperationPlan,
+    boundary: ProjectPathBoundary
+  ): Promise<PreparedFileWrite[]> {
+    const prepared: PreparedFileWrite[] = [];
 
     for (
       const operation
@@ -473,15 +597,6 @@ export class OperationPlanService {
         continue;
       }
 
-      if (
-        sha256(operation.content) !==
-        operation.contentSha256
-      ) {
-        throw operationPlanError(
-          `Operation '${operation.id}' content digest does not match its plan.`
-        );
-      }
-
       const target =
         boundary.resolve(
           operation.path
@@ -491,6 +606,38 @@ export class OperationPlanService {
         await readFileState(
           target
         );
+
+      // Preview and apply reject permission settings that would make durable
+      // verification or rollback inaccessible, without creating journal state.
+      if (actual.exists) {
+        const information = await fs.lstat(target, { bigint: true });
+        if ((information.mode & 0o400n) === 0n) {
+          throw operationPlanError("A file target must retain owner read permission for safe recovery.");
+        }
+      } else if (operation.mode === undefined && ((0o666 & ~process.umask()) & 0o400) === 0) {
+        throw operationPlanError("The current creation mask would make file recovery inaccessible.");
+      }
+      let parent = path.dirname(target);
+      while (true) {
+        let information;
+        try { information = await fs.lstat(parent, { bigint: true }); }
+        catch (error) {
+          if (!isOperationErrno(error, "ENOENT")) throw error;
+        }
+        if (information) {
+          const requiredOwnerMode = process.platform === "win32" ? 0o600n : 0o700n;
+          if (!information.isDirectory() || information.isSymbolicLink() ||
+              (information.mode & requiredOwnerMode) !== requiredOwnerMode) {
+            throw operationPlanError("A target parent must retain owner read/write/search permissions for safe recovery.");
+          }
+          break;
+        }
+        if (((0o777 & ~process.umask()) & 0o700) !== 0o700) {
+          throw operationPlanError("The current creation mask would make directory recovery inaccessible.");
+        }
+        if (parent === boundary.projectRoot) throw operationPlanError("The project root disappeared during validation.");
+        parent = path.dirname(parent);
+      }
 
       if (
         !fileStatesEqual(
@@ -516,126 +663,117 @@ export class OperationPlanService {
       });
     }
 
-    if (options.dryRun) {
-      return createOperationReport(
-        validated,
-        "dry-run",
-        startedAt,
-        new Date(this.now())
-          .toISOString()
-      );
-    }
+    return prepared;
+  }
 
-    const transaction =
-      new FileTransaction(
-        `operation plan ${validated.id}`,
-        boundary.projectRoot
-      );
-
+  private async writePreparedPlan(
+    validated: OperationPlan,
+    boundary: ProjectPathBoundary,
+    lifecycleLock: ProjectLifecycleLock
+  ): Promise<void> {
+    let transaction: DurableOperationTransaction;
     try {
-      for (
-        const item of prepared
-      ) {
-        await transaction
-          .recordModifiedFile(
-            item.target
-          );
-
-        await transaction
-          .recordDirectoryMode(
-            path.dirname(
-              item.target
-            )
-          );
-
-        await transaction
-          .ensureDirectory(
-            path.dirname(
-              item.target
-            )
-          );
-
-        const revalidatedTarget =
-          boundary.resolve(
-            item.operation.path
-          );
-
-        const revalidatedState =
-          await readFileState(
-            revalidatedTarget
-          );
-
-        if (
-          !fileStatesEqual(
-            item.operation.expected,
-            revalidatedState
-          )
-        ) {
-          throw new AuroraError(
-            `Project state changed while applying '${item.operation.path}'.`,
-            {
-              code:
-                ErrorCodes
-                  .OPERATION_PLAN_DRIFT,
-              suggestion:
-                "Regenerate and inspect the plan before applying it.",
-            }
-          );
-        }
-
-        await fs.writeFile(
-          revalidatedTarget,
-          item.operation.content,
-          {
-            encoding: "utf8",
-            ...(item.operation.mode ===
-            undefined
-              ? {}
-              : {
-                  mode:
-                    item.operation.mode,
-                }),
-          }
-        );
-
-        if (
-          item.operation.mode !==
-            undefined
-        ) {
-          await fs.chmod(
-            revalidatedTarget,
-            item.operation.mode
-          );
-        }
-
-        if (
-          item.operation
-            .directoryMode !==
-            undefined
-        ) {
-          await fs.chmod(
-            path.dirname(
-              revalidatedTarget
-            ),
-            item.operation
-              .directoryMode
-          );
-        }
-      }
-
-      transaction.commit();
+      transaction = await DurableOperationTransaction.prepare(validated,
+        boundary.projectRoot, lifecycleLock, new Date(this.now()).toISOString());
     } catch (error) {
-      await transaction.rollback();
-      throw error;
+      if (error instanceof AuroraError) throw error;
+      throw operationPlanError("Operation plan could not safely prepare its durable recovery evidence.", error);
     }
+    try {
+      assertPlanNotExpired(validated, this.now());
+      await transaction.beginMutation();
+      for (const operation of validated.operations) {
+        if (operation.kind === "file.write") await transaction.writeOperation(operation.id);
+      }
+      await transaction.beginVerification();
+      await transaction.commitDurably();
+    } catch (error) {
+      try {
+        await transaction.rollback();
+      } catch (recoveryError) {
+        throw new AuroraError("Operation plan did not finish cleanly; its recovery record was retained. No conflicting edits were overwritten.", {
+          code: recoveryError instanceof AuroraError && recoveryError.code === ErrorCodes.OPERATION_RECOVERY_CONFLICT
+            ? ErrorCodes.OPERATION_RECOVERY_CONFLICT : ErrorCodes.INVALID_OPERATION_PLAN,
+          suggestion: "Use 'aurora recovery plans --project <path>' to inspect the record before an approved recovery.",
+          cause: new AggregateError([error, recoveryError]),
+        });
+      }
+      if (error instanceof AuroraError) throw error;
+      throw operationPlanError("Operation plan failed and its owned file changes were recovered.", error);
+    }
+  }
+}
 
-    return createOperationReport(
-      validated,
-      "applied",
-      startedAt,
-      new Date(this.now())
-        .toISOString()
+function assertPlanNotExpired(plan: OperationPlan, now: number): void {
+  if (now >= Date.parse(plan.expiresAt)) {
+    throw new AuroraError("Operation plan has expired.", {
+      code: ErrorCodes.OPERATION_PLAN_EXPIRED,
+      suggestion: "Generate and inspect a new plan from the current project state.",
+    });
+  }
+}
+
+function assertNotLifecycleAuthorityPath(relativePath: string): void {
+  const normalized = relativePath.toLowerCase();
+  if (
+    normalized === ".aurora" ||
+    normalized === ".aurora/lifecycle-lock" ||
+    normalized.startsWith(".aurora/lifecycle-lock/") ||
+    normalized.startsWith(".aurora/.lifecycle-lock-candidate-") ||
+    normalized.startsWith(".aurora/.lifecycle-lock-release-") ||
+    normalized.startsWith(".aurora/.lifecycle-lock-reclaim-") ||
+    normalized.startsWith(".aurora/.operation-journal-candidate-") ||
+    normalized === ".aurora/operation-journal" ||
+    normalized.startsWith(".aurora/operation-journal/") ||
+    normalized === ".aurora/lifecycle-journal" ||
+    normalized.startsWith(".aurora/lifecycle-journal/")
+  ) {
+    throw operationPlanError(
+      "Operation plans must not write lifecycle lock or recovery metadata."
     );
+  }
+}
+
+export async function assertLifecycleJournalsCommitted(
+  boundary: ProjectPathBoundary
+): Promise<void> {
+  let directory: Dir;
+  try {
+    directory = await fs.opendir(boundary.resolve(".aurora/lifecycle-journal"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+
+  const rootDigest = sha256(boundary.projectRoot);
+  let count = 0;
+  try {
+    let entry: Dirent | null;
+    while ((entry = await directory.read()) !== null) {
+      if (++count > MAX_LIFECYCLE_JOURNALS) {
+        throw new Error("Lifecycle journal inspection limit exceeded.");
+      }
+      if (!entry.isDirectory() || entry.isSymbolicLink()) {
+        throw new Error("Unsafe lifecycle journal directory.");
+      }
+      if (entry.name === "recovered") continue;
+
+      const id = parseLifecycleTransactionId(entry.name);
+      const content = await readStableFileContent(
+        boundary.resolve(`.aurora/lifecycle-journal/${id}/journal.json`),
+        LIFECYCLE_JOURNAL_MAX_BYTES
+      );
+      if (content === null) throw new Error("Lifecycle journal envelope is missing.");
+      const journal = parseLifecycleJournalEnvelope(parsePackageManifestBytes(content));
+      if (journal.transactionId !== id || journal.projectRootSha256 !== rootDigest) {
+        throw new Error("Lifecycle journal binding mismatch.");
+      }
+      if (journal.phase !== "committed") {
+        throw new Error("An incomplete package lifecycle transaction requires recovery.");
+      }
+    }
+  } finally {
+    await directory.close();
   }
 }
 
@@ -668,92 +806,26 @@ export function sha256(
 async function readFileState(
   target: string
 ): Promise<ExpectedFileState> {
-  let handle:
-    fs.FileHandle | undefined;
+  const content = await readStableFileContent(target, MAX_PLAN_FILE_BYTES);
+  return content === null
+    ? { exists: false }
+    : { exists: true, sha256: sha256(content) };
+}
 
+async function readStableFileContent(
+  target: string,
+  maximumBytes: number
+): Promise<Buffer | null> {
   try {
-    handle = await fs.open(
-      target,
-      "r"
-    );
-
-    const information =
-      await handle.stat();
-    const pathInformation =
-      await fs.lstat(target);
-
-    if (
-      !information.isFile() ||
-      !pathInformation.isFile() ||
-      pathInformation
-        .isSymbolicLink() ||
-      !sameFileIdentity(
-        information,
-        pathInformation
-      )
-    ) {
-      throw operationPlanError(
-        "Planned file target must be absent or a regular file."
-      );
-    }
-
-    if (
-      information.size >
-      MAX_PLAN_FILE_BYTES
-    ) {
-      throw operationPlanError(
-        "Planned file target is larger than the 1 MiB planning limit."
-      );
-    }
-
-    const content =
-      await handle.readFile();
-    const completedInformation =
-      await handle.stat();
-
-    if (
-      fileChangedWhileReading(
-        information,
-        completedInformation
-      )
-    ) {
-      throw operationPlanError(
-        "Planned file target changed while it was being inspected."
-      );
-    }
-
-    return {
-      exists: true,
-      sha256: sha256(content),
-    };
+    // Planning and journal inspection share exact BigInt/nanosecond descriptor
+    // checks rather than rounding large file IDs or maintaining weaker copies.
+    const snapshot = await readOperationFile(target, maximumBytes);
+    return snapshot?.content ?? null;
   } catch (error) {
-    if (
-      error instanceof AuroraError
-    ) {
-      throw error;
-    }
-
-    const code =
-      (
-        error as
-          NodeJS.ErrnoException
-      ).code;
-
-      if (
-        handle === undefined &&
-        code === "ENOENT"
-      ) {
-      return {
-        exists: false,
-      };
-    }
-
     throw operationPlanError(
       "Planned file target could not be inspected safely.",
       error
     );
-  } finally {
-    await handle?.close();
   }
 }
 
@@ -773,6 +845,7 @@ function fileChangedWhileReading(
 ): boolean {
   return (
     before.size !== after.size ||
+    before.nlink !== after.nlink ||
     before.mtimeMs !== after.mtimeMs ||
     before.ctimeMs !== after.ctimeMs
   );
@@ -815,4 +888,12 @@ function operationPlanError(
       cause,
     }
   );
+}
+
+/** Enforce the envelope limit before more expensive field and secret checks. */
+function parseBoundedPlan(value: unknown): OperationPlan {
+  if (Buffer.byteLength(JSON.stringify(value), "utf8") > MAX_PLAN_FILE_BYTES) {
+    throw operationPlanError("Operation Plan v1 must not exceed 1 MiB.");
+  }
+  return parseOperationPlan(value);
 }

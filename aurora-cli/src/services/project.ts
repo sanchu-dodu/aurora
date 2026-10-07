@@ -39,6 +39,12 @@ export interface ProjectCreationOptions {
 
   gitInitializer?:
     typeof initializeGit;
+
+  /** Suppress creation messages; subprocess output is unchanged. */
+  silent?: boolean;
+
+  /** Additional trusted starter metadata, created only if the path is absent. */
+  additionalFiles?: readonly { readonly relativePath: string; readonly content: string }[];
 }
 
 export async function createProject(
@@ -88,9 +94,12 @@ export async function createProject(
     options.gitInitializer ??
     initializeGit;
 
-  await fs.ensureDir(
-    projectPath
-  );
+  // Exclusive creation: never claim or clean up an existing project.
+  await fs.mkdir(projectPath);
+  const createdDirectory = await fs.lstat(projectPath, { bigint: true });
+  if (!createdDirectory.isDirectory() || createdDirectory.isSymbolicLink()) {
+    throw new Error("The newly created project directory changed before initialization.");
+  }
 
   const projectBoundary =
     new ProjectPathBoundary(
@@ -118,6 +127,14 @@ export async function createProject(
     generatedFiles.push(
       "aurora.config.json"
     );
+
+    for (const file of options.additionalFiles ?? []) {
+      const destination = projectBoundary.resolve(file.relativePath);
+      await fs.ensureDir(path.dirname(destination), { mode: 0o700 });
+      await fs.writeFile(projectBoundary.resolve(file.relativePath), file.content,
+        { encoding: "utf8", flag: "wx", mode: 0o600 });
+      generatedFiles.push(file.relativePath);
+    }
 
     if (
       config.installDependencies
@@ -159,18 +176,22 @@ export async function createProject(
       );
     }
 
-    console.log("");
-    console.log(
-      `✅ Project created at: ${projectPath}`
-    );
+    if (!options.silent) {
+      console.log("");
+      console.log(`✅ Project created at: ${projectPath}`);
+    }
 
     return projectPath;
   } catch (error) {
     try {
+      const cleanupTarget = workspaceBoundary.resolve(config.projectName);
+      const currentDirectory = await fs.lstat(cleanupTarget, { bigint: true });
+      if (!currentDirectory.isDirectory() || currentDirectory.isSymbolicLink() ||
+          currentDirectory.dev !== createdDirectory.dev || currentDirectory.ino !== createdDirectory.ino) {
+        throw new Error("Partial project directory was replaced; refusing to remove the replacement.");
+      }
       await fs.remove(
-        workspaceBoundary.resolve(
-          config.projectName
-        )
+        cleanupTarget
       );
     } catch (cleanupError) {
       throw new AggregateError(
@@ -182,10 +203,10 @@ export async function createProject(
       );
     }
 
-    console.log("");
-    console.log(
-      "Removed partially created project."
-    );
+    if (!options.silent) {
+      console.log("");
+      console.log("Removed partially created project.");
+    }
 
     throw error;
   }

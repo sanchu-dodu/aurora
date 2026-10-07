@@ -331,6 +331,7 @@ async function verifyGeneratedProject(
     "aurora.config.json",
     ".gitignore",
     "app/page.tsx",
+    "app/layout.tsx",
   ];
 
   for (
@@ -594,6 +595,15 @@ async function verifyInstalledPackage(
     "docs/package-trust-v1.md",
     "docs/package-signing-operations.md",
     "docs/operation-plan-v1.md",
+    "dist/operations/operationJournal.js",
+    "dist/operations/operationJournal.d.ts",
+    "dist/operations/durableOperationTransaction.js",
+    "dist/operations/durableOperationTransaction.d.ts",
+    "dist/operations/operationRecoveryService.js",
+    "dist/operations/operationRecoveryService.d.ts",
+    "docs/solution-packs-v1.md",
+    "dist/solutions/index.js",
+    "dist/solutions/index.d.ts",
     "docs/extension-worker-v1.md",
     "dist/plugins/helloExtension.js",
     "dist/plugins/helloExtension.manifest.json",
@@ -922,6 +932,111 @@ async function main() {
     await verifyGeneratedProject(
       generatedProject
     );
+
+    const inspectionResult = await runAurora(consumerRoot, packageJson.name, [
+      "project", "inspect", "--project", generatedProject, "--json",
+    ]);
+    const inspection = JSON.parse(inspectionResult.stdout);
+    assertCondition(inspection.schemaVersion === 1 && inspection.healthy &&
+      inspection.node !== null && inspection.pendingOperationPlans === 0,
+      "Installed CLI did not inspect the generated project successfully.");
+    const sdkResult = await runProcess(process.execPath, [
+      "--input-type=module", "--eval",
+      `import { inspectProject } from ${JSON.stringify(packageJson.name + "/projects")};` +
+      `console.log(JSON.stringify(inspectProject(${JSON.stringify(generatedProject)})));`,
+    ], { cwd: consumerRoot, label: "Verifying installed shared project API" });
+    assertCondition(JSON.stringify(JSON.parse(sdkResult.stdout)) === JSON.stringify(inspection),
+      "Installed project API and CLI inspection disagree.");
+    console.log("Verified installed project inspection command and shared API.");
+
+    const solutionResult = await runAurora(consumerRoot, packageJson.name, [
+      "create", "web-app", "smoke-solution", "--json",
+    ]);
+    const solutionRoot = JSON.parse(solutionResult.stdout).root;
+    await verifyGeneratedProject(solutionRoot);
+    const healthPlanFile = join(consumerRoot, "health-plan.json");
+    const preview = await runAurora(consumerRoot, packageJson.name, [
+      "capability", "plan", "health", "--project", solutionRoot, "--out", healthPlanFile, "--json",
+    ]);
+    assertCondition(JSON.parse(preview.stdout).operations.length === 2,
+      "Installed capability planner did not return its two-file preview.");
+    assertCondition(!await pathExists(join(solutionRoot, "app/api/health/route.ts")),
+      "Installed preview unexpectedly created the health endpoint.");
+    await runAurora(consumerRoot, packageJson.name, [
+      "apply", healthPlanFile, "--project", solutionRoot, "--dry-run", "--json",
+    ]);
+    assertCondition(!await pathExists(join(solutionRoot, "app/api/health/route.ts")),
+      "Installed dry-run unexpectedly created the health endpoint.");
+    const applied = await runAurora(consumerRoot, packageJson.name, [
+      "apply", healthPlanFile, "--project", solutionRoot, "--yes", "--json",
+    ]);
+    assertCondition(JSON.parse(applied.stdout).totals.applied === 2,
+      "Installed capability plan did not apply both writes.");
+    const operationJournalRoot = join(solutionRoot, ".aurora", "operation-journal");
+    const committedTransactions = (await readdir(operationJournalRoot, { withFileTypes: true }))
+      .filter(entry => entry.isDirectory() && entry.name !== "recovered");
+    assertCondition(committedTransactions.length === 1,
+      "Installed capability apply did not retain one durable transaction record.");
+    const committedJournalPath = join(operationJournalRoot, committedTransactions[0].name, "journal.json");
+    const committedJournalBefore = await readFile(committedJournalPath, "utf8");
+    assertCondition(JSON.parse(committedJournalBefore).journal.phase === "committed",
+      "Installed capability apply did not commit its durable recovery record.");
+    const solutionStatePath = join(solutionRoot, ".aurora", "solution.json");
+    const healthRoute = join(solutionRoot, "app/api/health/route.ts");
+    const solutionStateBefore = await readFile(solutionStatePath, "utf8");
+    const healthRouteBefore = await readFile(healthRoute, "utf8");
+    const recoveryPlansResult = await runAurora(consumerRoot, packageJson.name, [
+      "recovery", "plans", "--project", solutionRoot, "--json",
+    ]);
+    const recoveryPlans = JSON.parse(recoveryPlansResult.stdout);
+    assertCondition(recoveryPlans.schemaVersion === 1 && recoveryPlans.root === solutionRoot &&
+      Array.isArray(recoveryPlans.transactions) && recoveryPlans.transactions.length === 0,
+      "Installed recovery listing reported pending records after a committed capability apply.");
+    assertCondition(!/Aurora Runtime|plugin activated/i.test(
+      `${recoveryPlansResult.stdout}\n${recoveryPlansResult.stderr}`) &&
+      await readFile(committedJournalPath, "utf8") === committedJournalBefore &&
+      await readFile(solutionStatePath, "utf8") === solutionStateBefore &&
+      await readFile(healthRoute, "utf8") === healthRouteBefore &&
+      !await pathExists(join(solutionRoot, ".aurora", "lifecycle-lock")),
+      "Installed recovery listing changed project state, retained a lock, or activated the runtime.");
+    const recoveryPlanHelp = await runAurora(consumerRoot, packageJson.name, [
+      "recovery", "plan", "--help",
+    ]);
+    assertCondition(/Usage:\s+aurora recovery plan/i.test(recoveryPlanHelp.stdout) &&
+      recoveryPlanHelp.stdout.includes("--dry-run") && recoveryPlanHelp.stdout.includes("--yes") &&
+      !/Aurora Runtime|plugin activated/i.test(`${recoveryPlanHelp.stdout}\n${recoveryPlanHelp.stderr}`),
+      "Installed explicit plan recovery help is unavailable or activated the runtime.");
+    const capabilityVerification = await runAurora(consumerRoot, packageJson.name, [
+      "capability", "verify", "--project", solutionRoot, "--json",
+    ]);
+    assertCondition(JSON.parse(capabilityVerification.stdout).clean === true,
+      "Installed capability verification did not recognize the generated files.");
+    const solutionsApi = await runProcess(process.execPath, [
+      "--input-type=module", "--eval",
+      `import { listSolutionPacks, inspectCapabilities } from ${JSON.stringify(packageJson.name + "/solutions")};` +
+      `import { inspectProject } from ${JSON.stringify(packageJson.name + "/projects")};` +
+      `console.log(JSON.stringify({packs:listSolutionPacks(),project:inspectProject(${JSON.stringify(solutionRoot)}),files:inspectCapabilities(${JSON.stringify(solutionRoot)})}));`,
+    ], { cwd: consumerRoot, label: "Verifying installed solutions API" });
+    const solutionReport = JSON.parse(solutionsApi.stdout);
+    assertCondition(solutionReport.packs[0].id === "web-app" && solutionReport.project.healthy &&
+      solutionReport.project.pendingOperationPlans === 0 &&
+      solutionReport.project.solution.capabilities[0].id === "health" &&
+      solutionReport.files.clean === true &&
+      JSON.stringify(solutionReport.files) === JSON.stringify(JSON.parse(capabilityVerification.stdout)),
+      "Installed solution API could not inspect the added health capability.");
+    const userEdit = await readFile(healthRoute, "utf8") + "\n// User-owned edit.\n";
+    await writeFile(healthRoute, userEdit, "utf8");
+    const changedApi = await runProcess(process.execPath, [
+      "--input-type=module", "--eval",
+      `import { inspectCapabilities } from ${JSON.stringify(packageJson.name + "/solutions")};` +
+      `console.log(JSON.stringify(inspectCapabilities(${JSON.stringify(solutionRoot)})));`,
+    ], { cwd: consumerRoot, label: "Verifying installed read-only capability change detection" });
+    const changedReport = JSON.parse(changedApi.stdout);
+    assertCondition(changedReport.healthy && !changedReport.clean &&
+      changedReport.capabilities[0].files[0].status === "modified" &&
+      await readFile(healthRoute, "utf8") === userEdit,
+      "Installed capability inspection did not preserve and report a user edit.");
+    console.log("Verified installed starter creation, capability preview/dry-run/apply, read-only recovery listing, change detection, and solutions API.");
 
     await verifyInstalledPackage(
       join(

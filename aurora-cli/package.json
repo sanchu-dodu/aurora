@@ -6,6 +6,17 @@
   "bin": {
     "aurora": "dist/index.js"
   },
+  "exports": {
+    "./solutions": {
+      "types": "./dist/solutions/index.d.ts",
+      "import": "./dist/solutions/index.js"
+    },
+    "./projects": {
+      "types": "./dist/projects/index.d.ts",
+      "import": "./dist/projects/index.js"
+    },
+    "./*": "./*"
+  },
   "files": [
     "dist",
     "packages",

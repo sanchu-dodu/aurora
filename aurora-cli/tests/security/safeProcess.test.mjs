@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 
 import {
   mkdtemp,
+  mkdir,
+  writeFile,
+  readFile,
+  chmod,
+  symlink,
   realpath,
   rm,
 } from "node:fs/promises";
@@ -13,6 +18,7 @@ import {
 
 import {
   join,
+  dirname,
 } from "node:path";
 
 import {
@@ -36,6 +42,41 @@ function hasCode(code) {
 
     return true;
   };
+}
+
+async function isolationFixture(t) {
+  const root = await mkdtemp(join(tmpdir(), "aurora-executable-isolation-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const project = join(root, "project");
+  const cwd = join(root, "probe");
+  await mkdir(project);
+  await mkdir(cwd);
+  return { root, project, cwd };
+}
+
+/** A genuine executable/shim that records execution rather than merely throwing. */
+async function markerCommand(directory, command, marker, script = join(directory, `${command}-entry.cjs`)) {
+  await mkdir(directory, { recursive: true });
+  const content = `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "executed");\nprocess.stdout.write("1.0.0\\n");\n`;
+  await writeFile(script, content);
+  const executable = join(directory, process.platform === "win32" ? `${command}.cmd` : command);
+  if (process.platform === "win32") {
+    await writeFile(executable, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
+  } else {
+    await writeFile(executable, `#!${process.execPath}\n${content}`);
+    await chmod(executable, 0o700);
+  }
+  return executable;
+}
+
+async function assertMarkerAbsent(marker) {
+  await assert.rejects(readFile(marker), { code: "ENOENT" });
+}
+
+function isolationError(error) {
+  assert.ok([ErrorCodes.UNSAFE_PROCESS_REQUEST, ErrorCodes.PROCESS_EXECUTION_FAILED].includes(error.code),
+    `Unexpected executable-isolation error: ${error.code}`);
+  return true;
 }
 
 test(
@@ -89,6 +130,95 @@ test(
     );
   }
 );
+
+test("Safe process carries diagnostic tool-probe restrictions explicitly", async () => {
+  const environment = {
+    COREPACK_ENABLE_NETWORK: "0", COREPACK_ENABLE_AUTO_PIN: "0",
+    COREPACK_ENABLE_PROJECT_SPEC: "0", COREPACK_ENV_FILE: "0", YARN_IGNORE_PATH: "1",
+  };
+  const result = await runProcess({
+    command: "node",
+    args: ["-e", "console.log(JSON.stringify(Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('COREPACK_') || k === 'YARN_IGNORE_PATH'))))"],
+    environment,
+  });
+  assert.deepEqual(JSON.parse(result.stdout), environment);
+});
+
+for (const command of ["git", "npm", "pnpm"]) {
+  test(`Diagnostic isolation does not execute a project-local ${command} command`, async t => {
+    const { project, cwd } = await isolationFixture(t);
+    const bins = join(project, "node_modules", ".bin");
+    const marker = join(project, `${command}-executed.txt`);
+    await markerCommand(bins, command, marker);
+    await assert.rejects(runProcess({ command, args: ["--version"], cwd,
+      environment: { PATH: bins }, excludedExecutableRoot: project }), isolationError);
+    await assertMarkerAbsent(marker);
+  });
+}
+
+test("Diagnostic isolation rejects an outside executable resolving into the project", async t => {
+  const { root, project, cwd } = await isolationFixture(t);
+  const inside = join(project, "tools");
+  const outside = join(root, "external-path");
+  const marker = join(project, "outside-alias-executed.txt");
+  const executable = await markerCommand(inside, "pnpm", marker);
+  await mkdir(outside);
+  if (process.platform === "win32") {
+    // The shim itself is outside; its executable Node.js entrypoint is inside.
+    await markerCommand(outside, "pnpm", marker, join(inside, "pnpm-entry.cjs"));
+  } else {
+    await symlink(executable, join(outside, "pnpm"));
+  }
+  await assert.rejects(runProcess({ command: "pnpm", args: ["--version"], cwd,
+    environment: { PATH: outside }, excludedExecutableRoot: project }), isolationError);
+  await assertMarkerAbsent(marker);
+});
+
+test("Diagnostic isolation ignores relative PATH entries even outside the excluded project", async t => {
+  const { root, project, cwd } = await isolationFixture(t);
+  const marker = join(root, "relative-command-executed.txt");
+  await markerCommand(join(cwd, "relative-bin"), "pnpm", marker);
+  const originalCwd = process.cwd();
+  process.chdir(cwd);
+  try {
+    await assert.rejects(runProcess({ command: "pnpm", args: ["--version"], cwd,
+      environment: { PATH: "relative-bin" }, excludedExecutableRoot: project }), isolationError);
+  } finally {
+    process.chdir(originalCwd);
+  }
+  await assertMarkerAbsent(marker);
+});
+
+test("Diagnostic isolation rejects the current Node binary when it is inside the excluded root", async t => {
+  const { root, cwd } = await isolationFixture(t);
+  const marker = join(root, "current-node-executed.txt");
+  await assert.rejects(runProcess({ command: "node", cwd,
+    args: ["-e", `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "executed")`],
+    excludedExecutableRoot: dirname(await realpath(process.execPath)) }), isolationError);
+  await assertMarkerAbsent(marker);
+});
+
+test("Trusted PATH behavior remains available without diagnostic exclusion", async t => {
+  const { project, cwd } = await isolationFixture(t);
+  const bins = join(project, "node_modules", ".bin");
+  const marker = join(project, "trusted-command-executed.txt");
+  await markerCommand(bins, "pnpm", marker);
+  const result = await runProcess({ command: "pnpm", args: ["--version"], cwd,
+    environment: { PATH: bins } });
+  assert.equal(result.exitCode, 0);
+  assert.equal(await readFile(marker, "utf8"), "executed");
+});
+
+test("Diagnostic isolation still permits trusted outside executables with a shared root-name prefix", async t => {
+  const { root, project, cwd } = await isolationFixture(t);
+  const bins = join(root, "project-tools");
+  const marker = join(root, "outside-command-executed.txt");
+  await markerCommand(bins, "pnpm", marker);
+  const result = await runProcess({ command: "pnpm", args: ["--version"], cwd,
+    environment: { PATH: bins }, excludedExecutableRoot: project });
+  assert.equal(result.exitCode, 0);
+  assert.equal(await readFile(marker, "utf8"), "executed");
+});
 
 test(
   "Safe process rejects command, argument, and environment injection",

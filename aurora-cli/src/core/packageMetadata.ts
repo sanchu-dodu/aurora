@@ -87,3 +87,14 @@ export const AURORA_CLI_METADATA =
 
 export const AURORA_CLI_VERSION =
   AURORA_CLI_METADATA.version;
+
+// Keep diagnostics aligned with the published package's engine contract.
+export const AURORA_CLI_NODE_RANGE: string = (() => {
+  const metadata: unknown = JSON.parse(readFileSync(
+    new URL("../../package.json", import.meta.url), "utf8"
+  ));
+  if (!isRecord(metadata) || !isRecord(metadata.engines)) {
+    throw new Error("Aurora package metadata requires engines.node.");
+  }
+  return readRequiredString(metadata.engines, "node");
+})();

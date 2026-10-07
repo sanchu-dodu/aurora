@@ -41,6 +41,29 @@ Create a new project:
 aurora template install nextjs my-aurora-project
 ```
 
+## Create an app and preview an added capability
+
+```sh
+aurora create web-app my-app
+aurora capability plan health --project ./my-app --out health-plan.json
+aurora apply health-plan.json --project ./my-app --dry-run
+aurora apply health-plan.json --project ./my-app --yes
+aurora capability verify --project ./my-app
+```
+
+This bundled starter creates a buildable Next.js app without installing dependencies
+or changing Git. After installing the app's dependencies, the added `/api/health`
+endpoint returns `{"status":"ok"}` while the app is running. It is not a database
+or external-service readiness check. The preview refuses existing endpoint files;
+edits to affected files after preview prevent application. Shared silent APIs are
+available from `@kin666/aurora-cli/solutions`.
+The file check identifies edits, missing files, and unsafe paths without changing
+them. An edit is a warning, not proof that the app is broken. This is local change
+tracking, not publisher authentication.
+
+See [Bundled solutions and capability previews](docs/solution-packs-v1.md) for setup,
+file-protection rules, and the features and production-readiness work still ahead.
+
 ## Main commands
 
 ```bash
@@ -53,6 +76,27 @@ aurora package list
 ```
 
 All commands accept `--quiet` (or `-q`) to suppress normal standard output and `--no-color` to remove ANSI color and terminal styling. Quiet mode does not suppress failure diagnostics written to standard error.
+
+## Inspect project health
+
+```bash
+aurora project inspect --project ./my-project --json
+aurora doctor --project ./my-project
+aurora doctor --project ./my-project --strict --json
+```
+
+Project inspection provides a shared, versioned model of existing project metadata,
+features, declared dependencies, installed package receipts, locks, and pending
+lifecycle journal metadata. Doctor adds tool availability and Node.js compatibility
+checks. Both are read-only and do not activate Aurora plugins or execute project
+scripts. Warnings fail CI only with doctor `--strict`.
+
+Inspection also reports unfinished file plans in `pendingOperationPlans`. Pending
+or unsafe recovery records fail the health check; inspection never recovers them.
+
+Applications can import `inspectProject` from `@kin666/aurora-cli/projects`.
+See [Project Inspection v1](docs/project-inspection-v1.md) for safety limits, JSON
+output, and the distinction between metadata consistency and package verification.
 
 ## Plan before mutation
 
@@ -70,6 +114,19 @@ aurora apply config-plan.json --yes --json
 ```
 
 Plans expire, reject secret values, and fail if the project or target file changes after planning. Applying or validating a plan returns a versioned Operation Report v1 with stable plan and report identifiers, per-operation outcomes, timestamps, and totals.
+
+If a process stops during an approved file plan, inspect its durable record before
+an explicit rollback:
+
+```sh
+aurora recovery plans --project ./my-project --json
+aurora recovery plan <transaction-id> --project ./my-project --dry-run
+aurora recovery plan <transaction-id> --project ./my-project --yes
+```
+
+Recovery stops on conflicting edits instead of overwriting them. It does not run
+project code, resume the plan, or undo a committed plan. Ordinary Aurora lifecycle
+mutations are blocked until unfinished or unsafe file-plan evidence is resolved.
 
 See [Operation Plan v1](docs/operation-plan-v1.md) for the schemas, enabled operations, validation rules, and security limits.
 
