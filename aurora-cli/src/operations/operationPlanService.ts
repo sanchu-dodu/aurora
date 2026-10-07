@@ -8,7 +8,6 @@ import type {
   Dirent,
   Stats,
 } from "node:fs";
-import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -17,7 +16,7 @@ import {
 } from "../errors/AuroraError.js";
 
 import { DurableOperationTransaction } from "./durableOperationTransaction.js";
-import { assertOperationPlanAncestorCasing, isOperationErrno } from "./operationJournal.js";
+import { assertOperationPlanAncestorCasing, isOperationErrno, readOperationFile } from "./operationJournal.js";
 
 import {
   ErrorCodes,
@@ -817,115 +816,16 @@ async function readStableFileContent(
   target: string,
   maximumBytes: number
 ): Promise<Buffer | null> {
-  let handle:
-    fs.FileHandle | undefined;
-
-  let before: Stats;
   try {
-    before = await fs.lstat(target);
+    // Planning and journal inspection share exact BigInt/nanosecond descriptor
+    // checks rather than rounding large file IDs or maintaining weaker copies.
+    const snapshot = await readOperationFile(target, maximumBytes);
+    return snapshot?.content ?? null;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return null;
-    }
-    throw operationPlanError(
-      "Planned file target could not be inspected safely.", error
-    );
-  }
-
-  try {
-    if (!before.isFile() || before.nlink !== 1) {
-      throw operationPlanError(
-        "Planned file target must be absent or a regular file with no additional links."
-      );
-    }
-    if (before.size > maximumBytes) {
-      throw operationPlanError(
-        "Inspected file is larger than the supported size limit."
-      );
-    }
-
-    handle = await fs.open(
-      target,
-      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
-    );
-
-    const information =
-      await handle.stat();
-    const pathInformation =
-      await fs.lstat(target);
-
-    if (
-      !information.isFile() ||
-      !pathInformation.isFile() ||
-      information.nlink !== 1 ||
-      pathInformation.nlink !== 1 ||
-      pathInformation
-        .isSymbolicLink() ||
-      !sameFileIdentity(before, information) ||
-      fileChangedWhileReading(before, information) ||
-      !sameFileIdentity(
-        information,
-        pathInformation
-      )
-    ) {
-      throw operationPlanError(
-        "Planned file target must be absent or a regular file."
-      );
-    }
-
-    if (
-      information.size >
-      maximumBytes
-    ) {
-      throw operationPlanError(
-        "Inspected file is larger than the supported size limit."
-      );
-    }
-
-    const buffer = Buffer.alloc(maximumBytes + 1);
-    let length = 0;
-    while (length < buffer.length) {
-      const { bytesRead } = await handle.read(
-        buffer, length, buffer.length - length, length
-      );
-      if (bytesRead === 0) break;
-      length += bytesRead;
-    }
-    const completedInformation =
-      await handle.stat();
-    const completedPathInformation = await fs.lstat(target);
-
-    if (
-      length !== before.size ||
-      length > maximumBytes ||
-      !completedPathInformation.isFile() ||
-      completedPathInformation.nlink !== 1 ||
-      !sameFileIdentity(before, completedPathInformation) ||
-      fileChangedWhileReading(before, completedPathInformation) ||
-      fileChangedWhileReading(
-        information,
-        completedInformation
-      )
-    ) {
-      throw operationPlanError(
-        "Planned file target changed while it was being inspected."
-      );
-    }
-
-    return buffer.subarray(0, length);
-  } catch (error) {
-    if (
-      error instanceof AuroraError
-    ) {
-      throw error;
-    }
-
     throw operationPlanError(
       "Planned file target could not be inspected safely.",
       error
     );
-  } finally {
-    await handle?.close();
   }
 }
 
