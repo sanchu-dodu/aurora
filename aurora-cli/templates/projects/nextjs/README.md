@@ -21,7 +21,7 @@ To check and run the production build:
 {{PACKAGE_MANAGER}} run start
 ```
 
-The starter pins Next.js 16.3.8, React and React DOM 19.3.0, and TypeScript 7.0.2.
+The starter pins Next.js 16.4.6, React and React DOM 19.3.0, and TypeScript 7.0.2.
 Commit the dependency lockfile created by your package manager. Direct version
 pins alone do not lock transitive dependencies; use the lockfile and your package
 manager's frozen installation mode for repeatable CI builds.
