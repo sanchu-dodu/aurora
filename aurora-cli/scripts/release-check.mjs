@@ -857,6 +857,10 @@ async function main() {
       "Installed CLI activated the runtime while handling version or help."
     );
 
+    const wizardHelp = await runAurora(consumerRoot, packageJson.name, ["init", "--help"]);
+    assertCondition(wizardHelp.stdout.includes("--dry-run"),
+      "Installed Aurora CLI did not advertise the wizard dry-run option.");
+
     const completionResult =
       await runAurora(
         consumerRoot,

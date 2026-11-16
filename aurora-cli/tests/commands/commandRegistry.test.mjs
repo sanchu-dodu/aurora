@@ -115,7 +115,7 @@ test(
       doctor: "none",
       feature: "runtime",
       generate: "runtime",
-      init: "runtime",
+      init: "none",
       list: "catalog",
       package: "runtime",
       plan: "none",
