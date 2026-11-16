@@ -282,6 +282,59 @@ test("strict solution state rejects duplicate identities, overlapping paths and 
   });
 });
 
+test("CLI starter dry-run lists exactly the files creation will write to the selected workspace", async t => {
+  const parent = await workspace(t);
+  const targetWorkspace = join(parent, "target workspace");
+  await mkdir(targetWorkspace);
+  const args = ["create", "web-app", "cli-app", "--workspace", targetWorkspace, "--package-manager", "pnpm"];
+  const result = cliRun(parent, [...args, "--dry-run", "--json"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stderr, "");
+  const preview = JSON.parse(result.stdout);
+  assert.equal(preview.schemaVersion, 1);
+  assert.equal(preview.status, "dry-run");
+  assert.equal(preview.root, join(targetWorkspace, "cli-app"));
+  assert.equal(preview.packageManager, "pnpm");
+  assert.equal(preview.installDependencies, false);
+  assert.equal(preview.initializeGit, false);
+  assert.ok(preview.files.includes(".gitignore"));
+  assert.ok(preview.files.includes(statePath));
+  assert.deepEqual(await readdir(targetWorkspace), []);
+  assert.deepEqual(await readdir(parent), ["target workspace"]);
+
+  const quiet = cliRun(parent, [...args, "--dry-run", "--json", "--quiet"]);
+  assert.equal(quiet.status, 0, quiet.stderr);
+  assert.equal(quiet.stdout, "");
+  assert.deepEqual(await readdir(targetWorkspace), []);
+
+  const created = cliRun(parent, [...args, "--json"]);
+  assert.equal(created.status, 0, created.stderr);
+  assert.deepEqual(JSON.parse(created.stdout), {
+    schemaVersion: 1, root: preview.root, solution: preview.solution,
+  });
+  assert.deepEqual(Object.keys(await snapshot(preview.root)).sort(), preview.files);
+});
+
+test("CLI starter dry-run refuses existing, invalid, or unsupported destinations without changing files", async t => {
+  const parent = await workspace(t);
+  await mkdir(join(parent, "existing"));
+  await writeFile(join(parent, "existing", "mine.txt"), "keep me");
+  const before = await snapshot(parent);
+  for (const [args, error] of [
+    [["web-app", "existing"], /already exists/u],
+    [["web-app", "valid", "--workspace", "missing"], /UNSAFE_PROJECT_PATH/u],
+    [["web-app", "../escape"], /SOLUTION_NOT_SUPPORTED/u],
+    [["web-app", "valid", "--package-manager", "unsupported"], /SOLUTION_NOT_SUPPORTED/u],
+    [["unknown", "valid"], /SOLUTION_NOT_SUPPORTED/u],
+  ]) {
+    const result = cliRun(parent, ["create", ...args, "--dry-run", "--json"]);
+    assert.equal(result.status, 1, result.stderr);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, error);
+    assert.deepEqual(await snapshot(parent), before);
+  }
+});
+
 test("CLI creation, plan, project selection, dry-run and approved apply work without plugin activation", async t => {
   const parent = await workspace(t);
   const creation = cliRun(parent, ["create", "web-app", "cli-app", "--json"]);

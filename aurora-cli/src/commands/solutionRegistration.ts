@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { registerCommand } from "../core/commandRegistry.js";
 import { createSolution, getSolutionPack, inspectCapabilities, listSolutionPacks, planCapability } from "../solutions/index.js";
+import { previewSolutionCreation } from "../solutions/solutionService.js";
 import { OperationPlanService } from "../operations/operationPlanService.js";
 import { printOperationPlan } from "../operations/operationPlanOutput.js";
 import { redactSensitiveValue } from "../security/secretRedactor.js";
@@ -14,12 +15,24 @@ registerCommand({
       .description("Create an app from a bundled starter, without installing dependencies or changing Git")
       .option("--workspace <path>", "Existing directory in which to create the app", ".")
       .option("--package-manager <manager>", "npm, pnpm, or yarn", "npm")
-      .option("--json", "Print the created solution as JSON")
+      .option("--dry-run", "Preview the starter destination and files without writing")
+      .option("--json", "Print the starter preview or created solution as JSON")
       .action(async (id: string, name: string, options: {
-        workspace: string; packageManager: "npm" | "pnpm" | "yarn"; json?: boolean;
+        workspace: string; packageManager: "npm" | "pnpm" | "yarn"; dryRun?: boolean; json?: boolean;
       }) => {
-        const result = await createSolution(id, name,
-          { workspaceRoot: options.workspace, packageManager: options.packageManager });
+        const creationOptions = { workspaceRoot: options.workspace, packageManager: options.packageManager };
+        if (options.dryRun) {
+          const preview = await previewSolutionCreation(id, name, creationOptions);
+          if (options.json) console.log(JSON.stringify(redactSensitiveValue(preview), null, 2));
+          else {
+            console.log(`Would create ${id}: ${preview.root}`);
+            console.log(`Package manager: ${preview.packageManager}`);
+            for (const file of preview.files) console.log(`  ${file}`);
+            console.log("Dry run: no files, dependencies, or Git changes.");
+          }
+          return;
+        }
+        const result = await createSolution(id, name, creationOptions);
         if (options.json) console.log(JSON.stringify(redactSensitiveValue(result), null, 2));
         else {
           console.log(`Created ${id}: ${result.root}`);

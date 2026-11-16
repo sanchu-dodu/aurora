@@ -44,6 +44,7 @@ aurora template install nextjs my-aurora-project
 ## Create an app and preview an added capability
 
 ```sh
+aurora create web-app my-app --dry-run --json
 aurora create web-app my-app
 aurora capability plan health --project ./my-app --out health-plan.json
 aurora apply health-plan.json --project ./my-app --dry-run
@@ -51,7 +52,8 @@ aurora apply health-plan.json --project ./my-app --yes
 aurora capability verify --project ./my-app
 ```
 
-This bundled starter creates a buildable Next.js app without installing dependencies
+The first command previews the destination and files without writing anything.
+The bundled starter creates a buildable Next.js app without installing dependencies
 or changing Git. After installing the app's dependencies, the added `/api/health`
 endpoint returns `{"status":"ok"}` while the app is running. It is not a database
 or external-service readiness check. The preview refuses existing endpoint files;

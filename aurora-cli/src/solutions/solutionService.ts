@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { createProject } from "../services/project.js";
+import { createProject, previewProjectCreation } from "../services/project.js";
 import { loadTemplateManifest } from "../services/manifest.js";
 import { inspectProject } from "../projects/projectInspection.js";
 import { readProjectMetadata } from "../projects/projectMetadata.js";
@@ -33,6 +33,20 @@ export interface CreatedSolution {
 /** Offline, silent creation. Dependency installation and Git changes are separate. */
 export async function createSolution(id: string, projectName: string,
   options: CreateSolutionOptions = {}): Promise<CreatedSolution> {
+  const { config, creationOptions, state } = await prepareSolutionCreation(id, projectName, options);
+  const root = await createProject(config, creationOptions);
+  return { schemaVersion: 1, root: new ProjectPathBoundary(root).projectRoot, solution: state };
+}
+
+/** A preview of bundled starter creation; this is not an executable operation plan. */
+export async function previewSolutionCreation(id: string, projectName: string, options: CreateSolutionOptions = {}) {
+  const { config, creationOptions, state } = await prepareSolutionCreation(id, projectName, options);
+  const { root, files } = await previewProjectCreation(config, creationOptions);
+  return { schemaVersion: 1, status: "dry-run", root, files, solution: state,
+    packageManager: config.packageManager, installDependencies: false, initializeGit: false } as const;
+}
+
+async function prepareSolutionCreation(id: string, projectName: string, options: CreateSolutionOptions) {
   const pack = getSolutionPack(id);
   const manager = options.packageManager ?? "npm";
   if (!pack.packageManagers.includes(manager) ||
@@ -52,12 +66,13 @@ export async function createSolution(id: string, projectName: string,
   }
   const state = parseSolutionState({ schemaVersion: 1,
     solution: { id: pack.id, version: pack.version }, template: pack.template, capabilities: [] });
-  const root = await createProject({ projectName, framework: pack.framework, language: pack.language,
-    packageManager: manager, installDependencies: false, initializeGit: false }, {
-    workspaceRoot: options.workspaceRoot, silent: true,
-    additionalFiles: [{ relativePath: STATE_PATH, content: serializeState(state) }],
-  });
-  return { schemaVersion: 1, root: new ProjectPathBoundary(root).projectRoot, solution: state };
+  return {
+    state,
+    config: { projectName, framework: pack.framework, language: pack.language,
+      packageManager: manager, installDependencies: false, initializeGit: false },
+    creationOptions: { workspaceRoot: options.workspaceRoot, silent: true,
+      additionalFiles: [{ relativePath: STATE_PATH, content: serializeState(state) }] },
+  };
 }
 
 export interface PlanCapabilityOptions {

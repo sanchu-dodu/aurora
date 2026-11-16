@@ -15,6 +15,7 @@ import {
 
 import {
   copyTemplate,
+  listTemplateOutputPaths,
 } from "./templateEngine.js";
 
 import {
@@ -47,40 +48,31 @@ export interface ProjectCreationOptions {
   additionalFiles?: readonly { readonly relativePath: string; readonly content: string }[];
 }
 
+const PROJECT_CONFIG_PATH = "aurora.config.json";
+
+/** List expected files without creating the project or reserving its path. */
+export async function previewProjectCreation(
+  config: ProjectConfig,
+  options: Pick<ProjectCreationOptions, "workspaceRoot" | "templateRoot" | "additionalFiles"> = {}
+): Promise<{ root: string; files: string[] }> {
+  const { projectPath, workspaceBoundary } =
+    await resolveNewProjectTarget(config.projectName, options.workspaceRoot);
+  const files = [
+    ...await listTemplateOutputPaths(config, options.templateRoot),
+    PROJECT_CONFIG_PATH,
+    ...(options.additionalFiles ?? []).map(file => file.relativePath),
+  ].map(file => file.replaceAll("\\", "/")).sort();
+  for (const file of files) workspaceBoundary.resolve(`${config.projectName}/${file}`);
+  return { root: projectPath, files };
+}
+
 export async function createProject(
   config: ProjectConfig,
   options:
     ProjectCreationOptions = {}
 ): Promise<string> {
-  validateProjectName(
-    config.projectName
-  );
-
-  const workspaceRoot =
-    path.resolve(
-      options.workspaceRoot ??
-      process.cwd()
-    );
-
-  const workspaceBoundary =
-    new ProjectPathBoundary(
-      workspaceRoot
-    );
-
-  const projectPath =
-    workspaceBoundary.resolve(
-      config.projectName
-    );
-
-  if (
-    await fs.pathExists(
-      projectPath
-    )
-  ) {
-    throw new Error(
-      `Project '${config.projectName}' already exists.`
-    );
-  }
+  const { projectPath, workspaceBoundary } =
+    await resolveNewProjectTarget(config.projectName, options.workspaceRoot);
 
   const templateRoot =
     options.templateRoot ??
@@ -116,7 +108,7 @@ export async function createProject(
 
     await fs.writeJson(
       projectBoundary.resolve(
-        "aurora.config.json"
+        PROJECT_CONFIG_PATH
       ),
       config,
       {
@@ -125,7 +117,7 @@ export async function createProject(
     );
 
     generatedFiles.push(
-      "aurora.config.json"
+      PROJECT_CONFIG_PATH
     );
 
     for (const file of options.additionalFiles ?? []) {
@@ -210,6 +202,21 @@ export async function createProject(
 
     throw error;
   }
+}
+
+async function resolveNewProjectTarget(projectName: string, workspaceRoot = process.cwd()): Promise<{
+  projectPath: string; workspaceBoundary: ProjectPathBoundary;
+}> {
+  validateProjectName(projectName);
+  const workspaceBoundary = new ProjectPathBoundary(path.resolve(workspaceRoot));
+  const projectPath = workspaceBoundary.resolve(projectName);
+  try {
+    await fs.lstat(projectPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { projectPath, workspaceBoundary };
+    throw error;
+  }
+  throw new Error(`Project '${projectName}' already exists.`);
 }
 
 function validateProjectName(
