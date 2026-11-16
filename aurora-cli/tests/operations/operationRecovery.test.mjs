@@ -71,6 +71,13 @@ const workerSource = `
           await pause(message.action === "recover" ? "first-restored" : "first-renamed");
         }
       };
+      const link = fs.link;
+      fs.link = async function (source, destination) {
+        await link.call(this, source, destination);
+        if (path.resolve(destination) === path.join(message.root, "nested", "second.txt")) {
+          await pause("new-file-published");
+        }
+      };
       if (message.action === "apply") {
         const prepare = DurableOperationTransaction.prepare;
         DurableOperationTransaction.prepare = async function (...args) {
@@ -216,6 +223,15 @@ async function missing(target) {
   await assert.rejects(fs.lstat(target), { code: "ENOENT" });
 }
 
+async function readFixtureFile(target) {
+  const file = await fs.open(target, "r");
+  try {
+    return { info: await file.stat({ bigint: true }), content: await file.readFile("utf8") };
+  } finally {
+    await file.close();
+  }
+}
+
 async function withRecoveryLock(root, action) {
   const lock = await ProjectLifecycleLock.acquire(root, { allowOperationRecovery: true });
   try { return await action(lock); }
@@ -254,12 +270,21 @@ async function assertOriginal(value) {
   await missing(join(value.root, "nested"));
 }
 
-for (const point of ["preparing", "prepared", "mutating", "first-renamed", "first-written", "verifying"]) {
+for (const point of ["preparing", "prepared", "mutating", "first-renamed", "first-written", "new-file-published", "verifying"]) {
   test(`killed process at ${point} retains evidence and recovers original files exactly once`, async () => {
     const value = await interrupted(point);
     try {
       const owner = JSON.parse(await fs.readFile(join(value.root, ".aurora/lifecycle-lock"), "utf8"));
       assert.notEqual(owner.pid, process.pid);
+      if (point === "new-file-published") {
+        const target = join(value.root, "nested/second.txt");
+        const stage = join(journalDirectory(value), "stages/op-002.bin");
+        const live = await fs.stat(target, { bigint: true });
+        const staged = await fs.stat(stage, { bigint: true });
+        assert.equal(live.nlink, 2n);
+        assert.equal(live.dev, staged.dev);
+        assert.equal(live.ino, staged.ino);
+      }
       await recover(value);
       await assertOriginal(value);
       await missing(journalDirectory(value));
@@ -285,6 +310,63 @@ test("durable commit survives a killed process and cannot be rolled back", async
     const lock = await ProjectLifecycleLock.acquire(value.root);
     await lock.release();
   } finally { await fs.rm(value.root, { recursive: true, force: true }); }
+});
+
+test("new-file publication preserves an independent creator's file even when its bytes match", async t => {
+  const value = await fixture();
+  t.after(() => fs.rm(value.root, { recursive: true, force: true }));
+  const target = join(value.root, "nested/second.txt");
+  const plannedBytes = value.plan.operations[1].content;
+  const link = fs.link;
+  let created;
+  try {
+    fs.link = async function (source, destination) {
+      if (destination === target) {
+        const stage = await fs.stat(source);
+        await fs.writeFile(target, plannedBytes, { flag: "wx" });
+        await fs.chmod(target, stage.mode & 0o777);
+        created = await fs.stat(target, { bigint: true });
+      }
+      return link.call(this, source, destination);
+    };
+    await assert.rejects(new OperationPlanService({ now: () => NOW }).apply(value.plan, value.root, { approved: true }),
+      { code: ErrorCodes.OPERATION_RECOVERY_CONFLICT });
+  } finally {
+    fs.link = link;
+  }
+
+  assert.ok(created, "The other creator must publish before Aurora's link");
+  const { info, content } = await readFixtureFile(target);
+  assert.equal(info.ino, created.ino);
+  assert.equal(content, plannedBytes);
+  const [pending] = await listOperationJournals(value.root);
+  const before = await snapshot(value.root);
+  await assert.rejects(recover({ ...value, transactionId: pending.transactionId }),
+    { code: ErrorCodes.OPERATION_RECOVERY_CONFLICT });
+  assert.deepEqual(await snapshot(value.root), before);
+});
+
+test("committed new-file publication removes the staging link and preserves a read-only file mode", async t => {
+  const value = await fixture();
+  const target = join(value.root, "readonly.txt");
+  t.after(async () => {
+    await fs.chmod(target, 0o600).catch(error => { if (error.code !== "ENOENT") throw error; });
+    await fs.rm(value.root, { recursive: true, force: true });
+  });
+  const service = new OperationPlanService({ now: () => NOW });
+  const plan = await service.createFileWritePlan({
+    projectRoot: value.root, relativePath: "readonly.txt", content: "read only\n",
+    intent: "test.new-file-mode", summary: "Create a read-only file", mode: 0o400,
+  });
+  await service.apply(plan, value.root, { approved: true });
+  const { info, content } = await readFixtureFile(target);
+  assert.equal(info.nlink, 1n);
+  assert.ok(info.mode & 0o400n);
+  assert.equal(info.mode & 0o222n, 0n);
+  assert.equal(content, "read only\n");
+  const [committed] = await listOperationJournals(value.root);
+  assert.equal(committed.phase, "committed");
+  await missing(join(journalDirectory({ ...value, transactionId: committed.transactionId }), "stages/op-001.bin"));
 });
 
 test("late recovery conflict preflight preserves every earlier target and all journal evidence", async () => {

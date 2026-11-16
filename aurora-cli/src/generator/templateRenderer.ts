@@ -21,7 +21,7 @@ export class TemplateRenderer {
       content =
         content.replaceAll(
           `{{${key}}}`,
-          value
+          () => value
         );
 
     }

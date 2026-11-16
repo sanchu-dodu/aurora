@@ -248,14 +248,14 @@ export function sameOperationSnapshot(left: BigIntStats, right: BigIntStats): bo
     left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
 }
 
-function assertStableRegularFile(information: BigIntStats, maximumBytes: number): void {
-  if (!information.isFile() || information.isSymbolicLink() || information.nlink !== 1n ||
+function assertStableRegularFile(information: BigIntStats, maximumBytes: number, links = 1n): void {
+  if (!information.isFile() || information.isSymbolicLink() || information.nlink !== links ||
     information.size > BigInt(maximumBytes)) throw operationJournalError();
 }
 
 /** Exact nanosecond/BigInt identity checks, bounded reads, and no symlink/FIFO opens. */
 export async function readOperationFile(
-  file: string, maximumBytes = OPERATION_JOURNAL_MAX_FILE_BYTES
+  file: string, maximumBytes = OPERATION_JOURNAL_MAX_FILE_BYTES, publicationPeer?: string
 ): Promise<OperationFileSnapshot | null> {
   let before: BigIntStats;
   try { before = await fs.lstat(file, { bigint: true }); }
@@ -263,15 +263,26 @@ export async function readOperationFile(
     if (isOperationErrno(error, "ENOENT")) return null;
     throw operationJournalError();
   }
-  assertStableRegularFile(before, maximumBytes);
+  // An interrupted create can have exactly two names: the live file and this
+  // transaction's stage. No other hard-linked state is safe to read through.
+  const peer = before.nlink === 2n ? publicationPeer : undefined;
+  const links = peer ? 2n : 1n;
+  assertStableRegularFile(before, maximumBytes, links);
+  const assertPeer = async (): Promise<void> => {
+    if (!peer) return;
+    const information = await fs.lstat(peer, { bigint: true });
+    assertStableRegularFile(information, maximumBytes, links);
+    if (!sameOperationSnapshot(before, information)) throw operationJournalError();
+  };
   let handle: fs.FileHandle | undefined;
   try {
+    await assertPeer();
     // codeql[js/file-system-race] -- Read-only open; exact descriptor/path snapshots are checked before any read and again afterward.
     handle = await fs.open(file,
       constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
     const opened = await handle.stat({ bigint: true });
     const openedPath = await fs.lstat(file, { bigint: true });
-    assertStableRegularFile(opened, maximumBytes);
+    assertStableRegularFile(opened, maximumBytes, links);
     if (!sameOperationSnapshot(before, opened) || !sameOperationSnapshot(before, openedPath)) {
       throw operationJournalError();
     }
@@ -284,6 +295,7 @@ export async function readOperationFile(
     }
     const completed = await handle.stat({ bigint: true });
     const completedPath = await fs.lstat(file, { bigint: true });
+    await assertPeer();
     if (BigInt(length) !== before.size || length > maximumBytes ||
       !sameOperationSnapshot(before, completed) || !sameOperationSnapshot(before, completedPath)) {
       throw operationJournalError();

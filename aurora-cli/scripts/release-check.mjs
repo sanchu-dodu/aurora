@@ -933,6 +933,29 @@ async function main() {
       generatedProject
     );
 
+    const componentPlanFile = join(consumerRoot, "component-plan.json");
+    const componentTarget = join(generatedProject, "src/components/SmokeHeader.tsx");
+    const componentPreview = await runAurora(consumerRoot, packageJson.name, [
+      "generate", "component", generatedProject, "SmokeHeader",
+      "--plan", componentPlanFile, "--json",
+    ]);
+    const componentPlan = JSON.parse(componentPreview.stdout);
+    assertCondition(componentPlan.intent === "generate.component" &&
+      componentPlan.operations[0].expected.exists === false &&
+      !await pathExists(componentTarget),
+      "Installed component planner did not produce a non-mutating preview.");
+    const componentDryRun = await runAurora(consumerRoot, packageJson.name, [
+      "generate", "component", generatedProject, "SmokeHeader", "--dry-run", "--json",
+    ]);
+    assertCondition(JSON.parse(componentDryRun.stdout).status === "dry-run" &&
+      !await pathExists(componentTarget), "Installed component dry run mutated the project.");
+    const componentApplied = await runAurora(consumerRoot, packageJson.name, [
+      "apply", componentPlanFile, "--project", generatedProject, "--yes", "--json",
+    ]);
+    assertCondition(JSON.parse(componentApplied.stdout).totals.applied === 1 &&
+      await readFile(componentTarget, "utf8") === componentPlan.operations[0].content,
+      "Installed component plan did not apply its exact rendered content.");
+
     const inspectionResult = await runAurora(consumerRoot, packageJson.name, [
       "project", "inspect", "--project", generatedProject, "--json",
     ]);
