@@ -2,6 +2,10 @@
 
 import { Generator } from "./generator.js";
 import { TemplateRenderer } from "./templateRenderer.js";
+import { AuroraError } from "../errors/AuroraError.js";
+import { ErrorCodes } from "../errors/errorCodes.js";
+import { OperationPlanService } from "../operations/operationPlanService.js";
+import type { OperationPlan } from "../operations/operationPlan.js";
 
 import {
   getTemplate,
@@ -21,6 +25,39 @@ export class ComponentGenerator {
     projectPath: string,
     componentName: string
   ): Promise<void> {
+    const { outputPath, content } = await this.render(componentName);
+    await new Generator(projectPath).generateFile(outputPath, content);
+  }
+
+  /** Render a new component into an inspectable plan without writing project files. */
+  async plan(
+    projectPath: string,
+    componentName: string,
+    service = new OperationPlanService()
+  ): Promise<OperationPlan> {
+    const { outputPath, content } = await this.render(componentName);
+    const plan = await service.createFileWritePlan({
+      projectRoot: projectPath,
+      relativePath: outputPath,
+      content,
+      intent: "generate.component",
+      summary: `Create React component '${componentName}'.`,
+      description: `Create ${outputPath} from Aurora's component template.`,
+    });
+    const operation = plan.operations[0];
+    if (operation.kind !== "file.write" || operation.expected.exists) {
+      throw new AuroraError("The component target already exists.", {
+        code: ErrorCodes.COMPONENT_ALREADY_EXISTS,
+        suggestion: "Choose another component name or review the existing file.",
+      });
+    }
+    return plan;
+  }
+
+  private async render(componentName: string): Promise<{
+    outputPath: string;
+    content: string;
+  }> {
     validateComponentName(
       componentName
     );
@@ -53,15 +90,7 @@ export class ComponentGenerator {
         `${componentName}${metadata.extension}`
       );
 
-    const generator =
-      new Generator(
-        projectPath
-      );
-
-    await generator.generateFile(
-      outputPath,
-      content
-    );
+    return { outputPath, content };
   }
 }
 

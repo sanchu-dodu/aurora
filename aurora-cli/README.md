@@ -136,6 +136,30 @@ Direct configuration mutation also requires explicit approval:
 aurora config set packageManager pnpm --yes
 ```
 
+## Preview component generation
+
+Component generation now requires explicit approval, like configuration writes.
+Existing component files are rejected even with approval.
+
+```sh
+aurora generate component ./my-app Header --dry-run --json
+aurora generate component ./my-app Header --plan header-plan.json --json
+aurora apply header-plan.json --project ./my-app --yes --json
+# Or create the component directly after reviewing its dry run:
+aurora generate component ./my-app Footer --yes
+```
+
+Without `--yes`, `--dry-run`, or `--plan`, the command prints the proposed change
+and exits with `OPERATION_APPROVAL_REQUIRED`. Dry runs perform no writes.
+Exported plans use the shared project fingerprint, expiry, file-drift checks,
+lifecycle lock, and durable recovery journal. `--plan` cannot be combined with
+`--yes` or `--dry-run`. Save exported plans outside the target app.
+The command loads bundled generator data without starting plugins.
+
+The lower-level `ComponentGenerator.generate()` API retains its existing direct-write
+behavior. Call `ComponentGenerator.plan()` and `OperationPlanService.apply()` for
+the approved, recoverable workflow.
+
 ## Shell completion
 
 Aurora can generate completion setup without starting the runtime or loading packages and plugins:

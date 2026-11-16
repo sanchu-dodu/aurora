@@ -150,7 +150,7 @@ test(
 );
 
 test(
-  "Read-only mixed subcommands use none or catalog while mutations stay runtime",
+  "Mixed subcommands select catalog, no activation, or legacy runtime",
   () => {
     const readOnlyPolicies = [
       [
@@ -220,6 +220,7 @@ test(
       ],
       ["recovery", ["plans"], "none"],
       ["recovery", ["plan"], "none"],
+      ["generate", ["component"], "none"],
     ];
 
     for (
@@ -247,10 +248,6 @@ test(
       [
         "feature",
         ["install"],
-      ],
-      [
-        "generate",
-        ["component"],
       ],
       [
         "package",
