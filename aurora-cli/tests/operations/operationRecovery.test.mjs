@@ -223,6 +223,15 @@ async function missing(target) {
   await assert.rejects(fs.lstat(target), { code: "ENOENT" });
 }
 
+async function readFixtureFile(target) {
+  const file = await fs.open(target, "r");
+  try {
+    return { info: await file.stat({ bigint: true }), content: await file.readFile("utf8") };
+  } finally {
+    await file.close();
+  }
+}
+
 async function withRecoveryLock(root, action) {
   const lock = await ProjectLifecycleLock.acquire(root, { allowOperationRecovery: true });
   try { return await action(lock); }
@@ -327,8 +336,9 @@ test("new-file publication preserves an independent creator's file even when its
   }
 
   assert.ok(created, "The other creator must publish before Aurora's link");
-  assert.equal((await fs.stat(target, { bigint: true })).ino, created.ino);
-  assert.equal(await fs.readFile(target, "utf8"), plannedBytes);
+  const { info, content } = await readFixtureFile(target);
+  assert.equal(info.ino, created.ino);
+  assert.equal(content, plannedBytes);
   const [pending] = await listOperationJournals(value.root);
   const before = await snapshot(value.root);
   await assert.rejects(recover({ ...value, transactionId: pending.transactionId }),
@@ -349,11 +359,11 @@ test("committed new-file publication removes the staging link and preserves a re
     intent: "test.new-file-mode", summary: "Create a read-only file", mode: 0o400,
   });
   await service.apply(plan, value.root, { approved: true });
-  const info = await fs.stat(target);
-  assert.equal(info.nlink, 1);
-  assert.ok(info.mode & 0o400);
-  assert.equal(info.mode & 0o222, 0);
-  assert.equal(await fs.readFile(target, "utf8"), "read only\n");
+  const { info, content } = await readFixtureFile(target);
+  assert.equal(info.nlink, 1n);
+  assert.ok(info.mode & 0o400n);
+  assert.equal(info.mode & 0o222n, 0n);
+  assert.equal(content, "read only\n");
   const [committed] = await listOperationJournals(value.root);
   assert.equal(committed.phase, "committed");
   await missing(join(journalDirectory({ ...value, transactionId: committed.transactionId }), "stages/op-001.bin"));
