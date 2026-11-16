@@ -38,8 +38,15 @@ aurora template info nextjs
 Create a new project:
 
 ```bash
+aurora template install nextjs my-aurora-project --dry-run --json
 aurora template install nextjs my-aurora-project
 ```
+
+The preview shows the destination, bundled template version, and planned files
+without writing anything or starting plugins. Both commands accept
+`--workspace <directory>` (the current directory by default) and `--json`.
+The preview does not reserve the destination; run the command without
+`--dry-run` to create the project. Neither mode installs dependencies or initializes Git.
 
 ## Create an app and preview an added capability
 
