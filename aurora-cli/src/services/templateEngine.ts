@@ -41,14 +41,31 @@ import {
 export async function copyTemplate(
   projectPath: string,
   config: ProjectConfig,
-  templateRoot =
-    getDefaultProjectTemplateRoot()
+  templateRoot = getDefaultProjectTemplateRoot()
 ): Promise<string[]> {
-  const pathBoundary =
-    new ProjectPathBoundary(
-      projectPath
-    );
+  const pathBoundary = new ProjectPathBoundary(projectPath);
+  const files = await selectTemplateFiles(config, templateRoot);
+  for (const { source, relativePath } of files) {
+    const destination = pathBoundary.resolve(relativePath);
+    await fs.ensureDir(path.dirname(destination));
+    const content = replaceVariables(await fs.readFile(source, "utf8"), config);
+    await fs.writeFile(pathBoundary.resolve(relativePath), content, "utf8");
+  }
+  return files.map(file => file.relativePath);
+}
 
+/** Calculate the same output paths as copyTemplate without copying the files. */
+export async function listTemplateOutputPaths(
+  config: ProjectConfig,
+  templateRoot = getDefaultProjectTemplateRoot()
+): Promise<string[]> {
+  return (await selectTemplateFiles(config, templateRoot)).map(file => file.relativePath);
+}
+
+async function selectTemplateFiles(
+  config: ProjectConfig,
+  templateRoot: string
+): Promise<{ source: string; relativePath: string }[]> {
   const templateDirectory =
     getTemplateDirectory(config);
 
@@ -105,76 +122,12 @@ export async function copyTemplate(
       templatePath
     );
 
-  const generatedFiles:
-    string[] = [];
-
-  for (const source of files) {
-    const relativePath =
-      path.relative(
-        templatePath,
-        source
-      );
-
-    if (
-      !shouldGenerateFile(
-        relativePath,
-        config
-      )
-    ) {
-      continue;
-    }
-
-    const processedRelativePath =
-      replaceVariables(
-        relativePath,
-        config
-      );
-
-    const outputRelativePath =
-      mapTemplateOutputPath(
-        processedRelativePath
-      );
-
-    const destination =
-      pathBoundary.resolve(
-        outputRelativePath
-      );
-
-    await fs.ensureDir(
-      path.dirname(
-        destination
-      )
-    );
-
-    let content =
-      await fs.readFile(
-        source,
-        "utf8"
-      );
-
-    content =
-      replaceVariables(
-        content,
-        config
-      );
-
-    const validatedDestination =
-      pathBoundary.resolve(
-        outputRelativePath
-      );
-
-    await fs.writeFile(
-      validatedDestination,
-      content,
-      "utf8"
-    );
-
-    generatedFiles.push(
-      outputRelativePath
-    );
-  }
-
-  return generatedFiles;
+  return files.flatMap(source => {
+    const relativePath = path.relative(templatePath, source);
+    return shouldGenerateFile(relativePath, config)
+      ? [{ source, relativePath: mapTemplateOutputPath(replaceVariables(relativePath, config)) }]
+      : [];
+  });
 }
 
 function mapTemplateOutputPath(

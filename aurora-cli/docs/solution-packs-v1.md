@@ -8,6 +8,7 @@ not claim that a complete hosted app or production platform is ready.
 
 ```sh
 aurora solution list
+aurora create web-app my-app --dry-run --json
 aurora create web-app my-app
 aurora project inspect --project ./my-app
 aurora capability list --solution web-app
@@ -25,6 +26,11 @@ check, not proof that a database, external service, or business workflow is heal
 
 Creation writes a new directory only. It does not fetch templates, install
 dependencies, initialize Git, upload files, deploy anything, or run project code.
+With `--dry-run`, it lists the proposed destination and project-relative files,
+including Aurora's config and starter record, without creating the directory.
+JSON output includes `schemaVersion: 1` and `status: "dry-run"`. The preview cannot
+be passed to `aurora apply` and does not reserve the destination. Run the
+same creation command without `--dry-run` when ready; it rechecks the destination.
 The default manager is npm; pnpm and yarn are supported. Project names must be
 lowercase, portable, unscoped Node package names. An existing directory is never
 reused. Failure cleanup checks that the directory is still the one creation owns;

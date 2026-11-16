@@ -972,10 +972,22 @@ async function main() {
       "Installed project API and CLI inspection disagree.");
     console.log("Verified installed project inspection command and shared API.");
 
+    const solutionDryRun = await runAurora(consumerRoot, packageJson.name, [
+      "create", "web-app", "smoke-solution", "--dry-run", "--json",
+    ]);
+    const starterPreview = JSON.parse(solutionDryRun.stdout);
+    assertCondition(starterPreview.status === "dry-run" &&
+      starterPreview.files.includes(".aurora/solution.json") &&
+      !await pathExists(join(consumerRoot, "smoke-solution")),
+      "Installed starter dry-run failed to preview the new project without creating it.");
     const solutionResult = await runAurora(consumerRoot, packageJson.name, [
       "create", "web-app", "smoke-solution", "--json",
     ]);
     const solutionRoot = JSON.parse(solutionResult.stdout).root;
+    assertCondition(solutionRoot === starterPreview.root, "Installed starter preview and create selected different roots.");
+    for (const file of starterPreview.files) {
+      assertCondition(await pathExists(join(solutionRoot, file)), `Installed starter did not create previewed file '${file}'.`);
+    }
     await verifyGeneratedProject(solutionRoot);
     const healthPlanFile = join(consumerRoot, "health-plan.json");
     const preview = await runAurora(consumerRoot, packageJson.name, [
