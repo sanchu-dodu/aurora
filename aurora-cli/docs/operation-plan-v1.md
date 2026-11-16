@@ -86,8 +86,11 @@ Its successful report is not a guarantee that a later apply can acquire the lock
 or pass the journal/drift checks. The shared lock serializes cooperating Aurora
 writers; it does not isolate the project from a hostile external process.
 File plans also persist separate recovery evidence before changing project files.
-Complete staged files are published by same-filesystem atomic rename rather than
-written in place. Pending or unsafe file-plan evidence blocks ordinary acquisition
+Existing files are replaced by same-filesystem atomic rename. New files are
+published from a complete stage with an exclusive hard link, so another writer's
+file cannot be replaced at creation time. New-file writes require a filesystem
+that supports hard links; Aurora does not fall back to an overwriting operation.
+Pending or unsafe file-plan evidence blocks ordinary acquisition
 of the shared lifecycle lock, including package mutations. It is not passed to
 the existing package-recovery engine.
 
@@ -111,12 +114,15 @@ before-state or Aurora's complete intended after-state, including permissions.
 An already-restored before-state is left alone. A conflicting edit, unsafe path,
 deleted originally-existing file, or unexpected child in a created directory
 stops recovery and preserves the record. Capturing a before-image alone does not
-give Aurora permission to overwrite a later edit. Each action is revalidated;
+give Aurora permission to overwrite a later edit. If a create was interrupted
+before its staging name was removed, recovery verifies both names refer to the
+same file and match the planned bytes and mode. An independent file alongside
+an unconsumed stage is a conflict even when its bytes match. Each action is revalidated;
 interrupted recovery can be retried. Successfully recovered records are archived,
 and retrying an archived ID does not inspect or undo newer project changes.
 
 The strict, root-bound, checksummed inventory and immutable plan are stored under
-`.aurora/operation-journal/<transaction-id>`. Before-images and staged output stay
+`.aurora/operation-journal/<transaction-id>`. Before-images and staging names stay
 inside that private record. A bootstrap candidate outside that namespace is inert:
 it never authorizes recovery of project files. Plans cannot write either recovery
 namespace or their lock/candidate paths. Corrupt records require deliberate

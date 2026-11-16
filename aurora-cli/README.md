@@ -139,7 +139,9 @@ aurora config set packageManager pnpm --yes
 ## Preview component generation
 
 Component generation now requires explicit approval, like configuration writes.
-Existing component files are rejected even with approval.
+Existing component files are rejected even with approval. New files are published
+without overwriting a concurrent creation; this requires a filesystem that
+supports hard links. See [Operation Plan v1](docs/operation-plan-v1.md).
 
 ```sh
 aurora generate component ./my-app Header --dry-run --json

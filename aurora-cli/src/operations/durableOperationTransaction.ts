@@ -104,6 +104,28 @@ async function liveFile(boundary: ProjectPathBoundary, entry: OperationJournalFi
   catch { throw recovery ? operationRecoveryConflict() : drift(); }
 }
 
+function fileStage(boundary: ProjectPathBoundary, id: string, entry: OperationJournalFile): string {
+  return operationJournalPath(boundary, id, `stages/${entry.operationId}.bin`);
+}
+
+async function publishedFile(
+  boundary: ProjectPathBoundary, id: string, entry: OperationJournalFile, recovery: boolean,
+): Promise<OperationFileSnapshot | null> {
+  if (entry.before.kind !== "absent") return liveFile(boundary, entry, recovery);
+  try {
+    const stage = fileStage(boundary, id, entry);
+    const actual = await readOperationFile(boundary.resolve(entry.path), undefined, stage);
+    if (actual?.stats.nlink === 1n) {
+      // An unconsumed stage plus an independent target is a collision, even
+      // if the other writer happened to create exactly the planned bytes.
+      try { await fs.lstat(stage); }
+      catch (error) { if (isOperationErrno(error, "ENOENT")) return actual; throw error; }
+      throw operationJournalError();
+    }
+    return actual;
+  } catch { throw recovery ? operationRecoveryConflict() : drift(); }
+}
+
 async function liveDirectory(boundary: ProjectPathBoundary, entry: OperationJournalDirectory, recovery: boolean): Promise<BigIntStats | null> {
   try { return await directorySnapshot(boundary, entry.path); }
   catch { throw recovery ? operationRecoveryConflict() : drift(); }
@@ -369,8 +391,13 @@ export class DurableOperationTransaction {
       if (journal.phase !== "mutating") throw operationJournalError();
       const entry = journal.files.find(file => file.operationId === operationId);
       if (!entry) throw operationJournalError();
-      const actual = await liveFile(this.boundary, entry, false);
-      const stage = await readOperationFile(operationJournalPath(this.boundary, this.transactionId, `stages/${operationId}.bin`));
+      const actual = await publishedFile(this.boundary, this.transactionId, entry, false);
+      if (actual?.stats.nlink === 2n) {
+        await this.finishNewFilePublication(entry);
+        return;
+      }
+      const source = fileStage(this.boundary, this.transactionId, entry);
+      const stage = await readOperationFile(source);
       if (!stage && afterMatches(entry, actual)) return;
       if (!stage || stage.sha256 !== entry.after.sha256 || stage.mode !== entry.after.mode ||
         stage.content.length !== entry.after.size) throw operationJournalError();
@@ -383,16 +410,23 @@ export class DurableOperationTransaction {
       for (const directory of requiredDirectories) {
         await this.publishDirectory(journal, directory);
       }
-      // The same-device check and a fresh boundary/current-state check precede rename.
+      // Both publication operations require a single filesystem.
       const parentInformation = await directorySnapshot(this.boundary, parent);
       if (!parentInformation || parentInformation.dev !== stage.stats.dev) throw operationJournalError();
       if (!beforeMatches(entry, await liveFile(this.boundary, entry, false))) throw drift();
       await assertAuthority(this.boundary, this.lock);
-      const source = operationJournalPath(this.boundary, this.transactionId, `stages/${operationId}.bin`);
       await syncStagedFile(source, entry.after);
       const target = this.boundary.resolve(entry.path);
       if (!beforeMatches(entry, await liveFile(this.boundary, entry, false))) throw drift();
-      await fs.rename(operationJournalPath(this.boundary, this.transactionId, `stages/${operationId}.bin`), target);
+      if (entry.before.kind === "absent") {
+        // Atomically publish already complete bytes, without replacing a
+        // destination created outside Aurora's lifecycle lock.
+        try { await fs.link(fileStage(this.boundary, this.transactionId, entry), target); }
+        catch (error) { if (isOperationErrno(error, "EEXIST")) throw drift(); throw error; }
+        await this.finishNewFilePublication(entry);
+        return;
+      }
+      await fs.rename(fileStage(this.boundary, this.transactionId, entry), target);
       await syncDirectory(resourcePath(this.boundary, parent));
       await syncDirectory(operationJournalPath(this.boundary, this.transactionId, "stages"));
     });
@@ -433,6 +467,16 @@ export class DurableOperationTransaction {
   private async assertOpenAuthority(): Promise<void> {
     if (this.closed) throw operationJournalError();
     await assertAuthority(this.boundary, this.lock);
+  }
+
+  private async finishNewFilePublication(entry: OperationJournalFile): Promise<void> {
+    // Keep the stage until the new directory entry is synced. If interrupted
+    // here, recovery only trusts the exact two-name pair and planned bytes.
+    await syncDirectory(resourcePath(this.boundary, parentPath(entry.path)));
+    const actual = await publishedFile(this.boundary, this.transactionId, entry, false);
+    if (actual?.stats.nlink !== 2n || !afterMatches(entry, actual)) throw drift();
+    await fs.unlink(fileStage(this.boundary, this.transactionId, entry));
+    await syncDirectory(operationJournalPath(this.boundary, this.transactionId, "stages"));
   }
 
   private async publishDirectory(journal: OperationJournal, entry: OperationJournalDirectory): Promise<void> {
@@ -518,7 +562,7 @@ async function assertCreatedDirectoryContents(
 async function preflightRecovery(boundary: ProjectPathBoundary, journal: OperationJournal): Promise<void> {
   if (journal.phase === "preparing" || journal.phase === "prepared") return;
   for (const entry of journal.files) {
-    const actual = await liveFile(boundary, entry, true);
+    const actual = await publishedFile(boundary, journal.transactionId, entry, true);
     if (!beforeMatches(entry, actual) && !afterMatches(entry, actual)) throw operationRecoveryConflict();
   }
   for (const entry of journal.directories) {
@@ -577,11 +621,13 @@ export async function recoverOperationTransaction(
     if (journal.phase !== "recovering") journal = await transition(boundary, journal, "recovering");
     for (const entry of [...journal.files].reverse()) {
       await assertAuthority(boundary, heldLock);
-      const actual = await liveFile(boundary, entry, true);
+      const actual = await publishedFile(boundary, journal.transactionId, entry, true);
       if (beforeMatches(entry, actual)) continue;
       if (!afterMatches(entry, actual)) throw operationRecoveryConflict();
       if (entry.before.kind === "absent") {
-        if (!afterMatches(entry, await liveFile(boundary, entry, true))) throw operationRecoveryConflict();
+        if (!afterMatches(entry, await publishedFile(boundary, journal.transactionId, entry, true))) {
+          throw operationRecoveryConflict();
+        }
         await fs.unlink(boundary.resolve(entry.path));
         await syncDirectory(resourcePath(boundary, parentPath(entry.path)));
         continue;
