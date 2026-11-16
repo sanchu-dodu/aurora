@@ -20,6 +20,7 @@ import {
 
 import {
   createProject,
+  previewProjectCreation,
 } from "../services/project.js";
 
 import {
@@ -30,7 +31,11 @@ import type {
   ProjectConfig,
 } from "../types/project.js";
 
-export async function initCommand():
+export interface InitOptions {
+  readonly dryRun?: boolean;
+}
+
+export async function initCommand(options: InitOptions = {}):
   Promise<void> {
   console.clear();
 
@@ -39,7 +44,7 @@ export async function initCommand():
   );
 
   console.log(
-    "        Aurora Project Wizard"
+    options.dryRun ? "        Aurora Project Wizard (dry run)" : "        Aurora Project Wizard"
   );
 
   console.log(
@@ -119,6 +124,15 @@ export async function initCommand():
         : "No"
     }`
   );
+
+  if (options.dryRun) {
+    const preview = await previewProjectCreation(config);
+    console.log(`Destination      : ${preview.root}`);
+    console.log("Starter files (before dependency installation or Git setup):");
+    for (const file of preview.files) console.log(`  ${file}`);
+    console.log("Dry run complete. No files were written, no dependencies installed, and Git was not changed.");
+    return;
+  }
 
   await createProject(config);
 

@@ -23,6 +23,17 @@ aurora --help
 
 ## Create a project
 
+To try the interactive wizard without creating a project, run:
+
+```bash
+aurora init --dry-run
+```
+
+Answer the usual questions. The preview lists the destination and starter files
+and shows whether dependencies and Git setup were selected. It performs neither
+step, writes nothing, and does not reserve the destination. Run `aurora init`
+without the flag when you're ready to create the project.
+
 Search available templates:
 
 ```bash
