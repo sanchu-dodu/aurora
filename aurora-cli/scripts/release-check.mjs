@@ -912,6 +912,15 @@ async function main() {
       "\n===== Creating project from installed package ====="
     );
 
+    const templatePreviewResult = await runAurora(consumerRoot, packageJson.name, [
+      "template", "install", "nextjs", "smoke-project", "--dry-run", "--json",
+    ]);
+    const templatePreview = JSON.parse(templatePreviewResult.stdout);
+    assertCondition(templatePreview.status === "dry-run" && templatePreview.template.id === "nextjs" &&
+      templatePreview.files.includes("aurora.config.json") &&
+      !await pathExists(join(consumerRoot, "smoke-project")),
+      "Installed template dry-run created output or did not report the bundled template.");
+
     await runAurora(
         consumerRoot,
         packageJson.name,
@@ -932,6 +941,10 @@ async function main() {
     await verifyGeneratedProject(
       generatedProject
     );
+    for (const file of templatePreview.files) {
+      assertCondition(await pathExists(join(generatedProject, file)),
+        `Installed template did not create previewed file '${file}'.`);
+    }
 
     const componentPlanFile = join(consumerRoot, "component-plan.json");
     const componentTarget = join(generatedProject, "src/components/SmokeHeader.tsx");

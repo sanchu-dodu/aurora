@@ -6,6 +6,7 @@ import {
   templateInfoCommand,
   templateSearchCommand,
   templateInstallCommand,
+  type TemplateInstallOptions,
 } from "./template.js";
 
 registerCommand({
@@ -13,6 +14,7 @@ registerCommand({
   subcommandActivations: {
     info: "catalog",
     search: "catalog",
+    install: "none",
   },
   register(program: Command): void {
 
@@ -41,14 +43,19 @@ registerCommand({
       .argument("<id>")
       .argument("<projectName>")
       .description("Create a project from a template")
+      .option("--workspace <path>", "Existing directory in which to create the project", ".")
+      .option("--dry-run", "Preview the destination and files without writing")
+      .option("--json", "Print the preview or creation result as JSON")
       .action(
         async (
           id: string,
-          projectName: string
+          projectName: string,
+          options: TemplateInstallOptions
         ) => {
           await templateInstallCommand(
             id,
-            projectName
+            projectName,
+            options
           );
         }
       );

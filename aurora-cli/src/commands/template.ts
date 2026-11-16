@@ -4,8 +4,10 @@ import {
 } from "../services/templateService.js";
 
 import {
-  installProject,
+  createTemplateProject,
+  previewTemplateInstallation,
 } from "../services/installService.js";
+import { redactSensitiveValue } from "../security/secretRedactor.js";
 
 import {
   AuroraError,
@@ -125,10 +127,38 @@ export async function templateSearchCommand(
   }
 }
 
+export interface TemplateInstallOptions {
+  readonly workspace?: string;
+  readonly dryRun?: boolean;
+  readonly json?: boolean;
+}
+
 export async function templateInstallCommand(
   id: string,
-  projectName: string
+  projectName: string,
+  options: TemplateInstallOptions = {}
 ): Promise<void> {
+  // The install command needs only the bundled template, not the runtime catalog.
+  await import("../templates/registerNext.js");
+  const projectCreation = { workspaceRoot: options.workspace, silent: options.json };
+  if (options.dryRun) {
+    const preview = await previewTemplateInstallation(id, projectName, projectCreation);
+    if (options.json) console.log(JSON.stringify(redactSensitiveValue(preview), null, 2));
+    else {
+      console.log(`Would install template ${preview.template.id}: ${preview.root}`);
+      console.log(`Package manager: ${preview.packageManager}`);
+      for (const file of preview.files) console.log(`  ${file}`);
+      console.log("Dry run: no files, dependencies, or Git changes.");
+    }
+    return;
+  }
+
+  if (options.json) {
+    const result = await createTemplateProject(id, projectName, { projectCreation });
+    console.log(JSON.stringify(redactSensitiveValue(result), null, 2));
+    return;
+  }
+
   console.log("");
   console.log(
     "Installing Template"
@@ -137,9 +167,10 @@ export async function templateInstallCommand(
     "==================="
   );
 
-  await installProject(
+  await createTemplateProject(
     id,
-    projectName
+    projectName,
+    { projectCreation }
   );
 
   console.log("");

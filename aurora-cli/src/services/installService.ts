@@ -14,6 +14,7 @@ import type {
 
 import {
   createProject,
+  previewProjectCreation,
   type ProjectCreationOptions,
 } from "./project.js";
 
@@ -44,6 +45,35 @@ export async function installProject(
   options:
     InstallProjectOptions = {}
 ): Promise<boolean> {
+  await createTemplateProject(templateId, projectName, options);
+  return true;
+}
+
+export async function createTemplateProject(
+  templateId: string, projectName: string, options: InstallProjectOptions = {}
+) {
+  const { config, template, report } = await prepareTemplateInstallation(templateId, projectName, options);
+  if (!options.projectCreation?.silent) {
+    console.log("");
+    console.log(`Installing ${template.displayName}`);
+  }
+  const root = await createProject(config, options.projectCreation);
+  return { ...report, status: "created", root } as const;
+}
+
+/** An informational preview of the default offline installation. */
+export async function previewTemplateInstallation(
+  templateId: string, projectName: string,
+  projectCreation: Pick<ProjectCreationOptions, "workspaceRoot" | "templateRoot"> = {}
+) {
+  const { config, report } = await prepareTemplateInstallation(templateId, projectName, { projectCreation });
+  const { root, files } = await previewProjectCreation(config, projectCreation);
+  return { ...report, status: "dry-run", root, files } as const;
+}
+
+async function prepareTemplateInstallation(
+  templateId: string, projectName: string, options: InstallProjectOptions
+) {
   const template =
     await getTemplateById(
       templateId
@@ -138,17 +168,15 @@ export async function installProject(
       false,
   };
 
-  console.log("");
-  console.log(
-    `Installing ${template.displayName}`
-  );
-
-  await createProject(
-    config,
-    options.projectCreation
-  );
-
-  return true;
+  return { config, template, report: {
+    schemaVersion: 1 as const,
+    template: { id: template.id, version: manifest.version },
+    framework: config.framework,
+    language: config.language,
+    packageManager: config.packageManager,
+    installDependencies: config.installDependencies,
+    initializeGit: config.initializeGit,
+  } };
 }
 
 function selectSupportedValue(
