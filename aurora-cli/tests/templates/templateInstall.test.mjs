@@ -268,7 +268,7 @@ test(
 
       assert.equal(
         packageJson.dependencies.next,
-        "16.3.8"
+        "16.4.6"
       );
 
       const auroraConfig =
