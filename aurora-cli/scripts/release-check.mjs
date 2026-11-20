@@ -916,6 +916,17 @@ async function main() {
       "\n===== Creating project from installed package ====="
     );
 
+    const beforePackagePreview = (await readdir(consumerRoot)).sort();
+    const packageDryRun = await runAurora(consumerRoot, packageJson.name, [
+      "package", "install", "auth", "--dry-run", "--json",
+    ]);
+    const packagePreview = JSON.parse(packageDryRun.stdout);
+    assertCondition(packagePreview.status === "dry-run" &&
+      packagePreview.projectStateChecked === false &&
+      packagePreview.installationOrder.join(",") === "database,env,auth" &&
+      JSON.stringify((await readdir(consumerRoot)).sort()) === JSON.stringify(beforePackagePreview),
+      "Installed package preview did not report the expected dependency schedule without writes.");
+
     const templatePreviewResult = await runAurora(consumerRoot, packageJson.name, [
       "template", "install", "nextjs", "smoke-project", "--dry-run", "--json",
     ]);

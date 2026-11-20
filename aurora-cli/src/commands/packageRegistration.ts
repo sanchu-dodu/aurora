@@ -1,6 +1,7 @@
 import { Command } from "commander";
 
 import { registerCommand } from "../core/commandRegistry.js";
+import type { PackageInstallOptions } from "../packages/installCommand.js";
 
 import {
   packageListCommand,
@@ -25,6 +26,7 @@ registerCommand({
   id: "package",
   subcommandActivations: {
     info: "catalog",
+    install: "none",
     list: "catalog",
     manifest: "catalog",
     resolve: "catalog",
@@ -101,11 +103,14 @@ registerCommand({
       .command("install")
       .description("Install a package")
       .argument("<package>")
+      .option("--dry-run", "Verify bundled artifacts and preview the dependency schedule without writes")
+      .option("--json", "Print the dry-run report as JSON (requires --dry-run)")
       .action(
-        async (packageId: string) => {
+        async (packageId: string, options: PackageInstallOptions) => {
 
           await packageInstallCommand(
-            packageId
+            packageId,
+            options
           );
 
         }

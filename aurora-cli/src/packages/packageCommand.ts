@@ -1,6 +1,6 @@
 import { listPackagesCommand } from "./listPackages.js";
 import { testManifest } from "./testManifest.js";
-import { installPackage } from "./installCommand.js";
+import { installPackage, type PackageInstallOptions } from "./installCommand.js";
 import { updatePackage } from "./updateCommand.js";
 import { searchPackages } from "./search/searchCommand.js";
 import { packageInfoCommand as showPackageInfo } from "./info/infoCommand.js";
@@ -47,11 +47,13 @@ export async function packageResolveCommand(
 }
 
 export async function packageInstallCommand(
-  packageId: string
+  packageId: string,
+  options: PackageInstallOptions = {}
 ): Promise<void> {
 
   await installPackage(
-    packageId
+    packageId,
+    options
   );
 
 }
