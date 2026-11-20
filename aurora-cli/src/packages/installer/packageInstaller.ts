@@ -5,6 +5,7 @@ import {
 import {
   ErrorCodes,
 } from "../../errors/errorCodes.js";
+import { ProjectPathBoundary } from "../../security/projectPathBoundary.js";
 
 import type {
   PackageExecutionPolicy,
@@ -154,6 +155,26 @@ export interface PackageInstallerOptions {
     readonly LockedOfficialRegistryPackage[];
 }
 
+export interface PackageInstallationPreview {
+  readonly schemaVersion: 1;
+  readonly status: "dry-run";
+  readonly requestedPackage: string;
+  readonly projectRoot: string;
+  readonly installationOrder: readonly string[];
+  readonly batches: readonly (readonly string[])[];
+  readonly projectStateChecked: false;
+  readonly packages: readonly {
+    readonly id: string;
+    readonly version: string;
+    readonly artifactDigest: string;
+    readonly dependencies: readonly string[];
+    readonly declaredCapabilities: readonly string[];
+    readonly declaresInstaller: boolean;
+    readonly declaresHooks: boolean;
+    readonly deprecated: boolean;
+  }[];
+}
+
 function checkConflicts(
   manifests: ReadonlyMap<
     string,
@@ -291,134 +312,45 @@ export class PackageInstaller {
       lockedOfficialPackages;
   }
 
+  /** Read-only preflight of the local artifacts, before any project-state checks. */
+  async preview(packageId: string): Promise<PackageInstallationPreview> {
+    if (this.lockedOfficialPackages.size > 0) {
+      throw new Error("This preview is for local package artifacts, not official registry installations.");
+    }
+    const projectRoot = new ProjectPathBoundary(this.projectRoot).projectRoot;
+    const { manifests, dependencyGraph, batches } =
+      await this.prepareInstallation(packageId, true);
+    checkConflicts(manifests, {});
+    const installationOrder = batches.flat();
+    return {
+      schemaVersion: 1,
+      status: "dry-run",
+      requestedPackage: packageId,
+      projectRoot,
+      installationOrder,
+      batches,
+      projectStateChecked: false,
+      packages: installationOrder.map(id => {
+        const manifest = manifests.get(id)!;
+        return {
+          id,
+          version: manifest.version,
+          artifactDigest: manifest.artifact.digest,
+          dependencies: dependencyGraph.getDependencies(id),
+          declaredCapabilities: manifest.capabilities,
+          declaresInstaller: manifest.files.some(file => file.role === "installer"),
+          declaresHooks: manifest.files.some(file => file.role === "hook"),
+          deprecated: manifest.lifecycle.deprecated,
+        };
+      }),
+    };
+  }
+
   async install(
     packageId: string
   ): Promise<void> {
-    const packages =
-      this.lockedOfficialPackages
-          .size === 0
-        ? await resolveDependencies(
-            packageId,
-            this.packageRoot,
-            new Set<string>(),
-            this.trustPolicy
-          )
-        : await this
-            .resolveLockedOfficialDependencies(
-              packageId
-            );
-
-    await this
-      .assertOfficialInstallSet(
-        packageId,
-        packages
-      );
-
-    const registry =
-      new PackageRegistry(
-        this.packageRoot
-      );
-
-    const compatibility =
-      new CompatibilityChecker();
-
-    const verifier =
-      new PackageArtifactVerifier();
-
-    const dependencyGraph =
-      new DependencyGraph();
-
-    const manifests =
-      new Map<
-        string,
-        PackageManifest
-      >();
-
-    console.log("");
-    console.log(
-      "Installing Packages"
-    );
-    console.log(
-      "==================="
-    );
-    console.log("");
-
-    for (const packageName of packages) {
-      const locked =
-        this.lockedOfficialPackages
-          .get(packageName);
-
-      const effectivePackageRoot =
-        locked === undefined
-          ? this.packageRoot
-          : locked.extracted
-              .stagingPath;
-
-      const manifest =
-        locked === undefined
-          ? await registry.getPackage(
-              packageName
-            )
-          : await loadVerifiedLockedOfficialRegistryManifest(
-              locked,
-              effectivePackageRoot,
-              this.projectRoot
-            );
-
-      /*
-       * Authenticate publisher authority before
-       * trusting any manifest-controlled package
-       * metadata during installation preflight.
-       */
-      this.trustPolicy.verify(
-        manifest
-      );
-
-      compatibility.check(
-        manifest
-      );
-
-      await verifier.verify(
-        effectivePackageRoot,
-        manifest
-      );
-
-      manifests.set(
-        manifest.id,
-        manifest
-      );
-
-      dependencyGraph.addPackage(
-        manifest.id,
-        manifest.dependencies
-          .filter(
-            (dependency) =>
-              packages.includes(
-                dependency.id
-              )
-          )
-          .map(
-            (dependency) =>
-              dependency.id
-          )
-      );
-    }
-
-    const analyzer =
-      new DependencyAnalyzer(
-        dependencyGraph
-      );
-
-    analyzer
-      .checkCircularDependencies();
-
-    const sorter =
-      new TopologicalSorter(
-        dependencyGraph
-      );
-
-    const installationOrder =
-      sorter.sort();
+    const { manifests, dependencyGraph, installationOrder, batches } =
+      await this.prepareInstallation(packageId);
 
     console.log("");
     console.log(
@@ -436,14 +368,6 @@ export class PackageInstaller {
     }
 
     console.log("");
-
-    const scheduler =
-      new InstallationScheduler(
-        dependencyGraph
-      );
-
-    const batches =
-      scheduler.createBatches();
 
     console.log(
       "Installation Batches"
@@ -618,6 +542,139 @@ export class PackageInstaller {
       await lifecycleLock
         .release();
     }
+  }
+
+  private async prepareInstallation(packageId: string, silent = false) {
+    const packages =
+      this.lockedOfficialPackages
+          .size === 0
+        ? await resolveDependencies(
+            packageId,
+            this.packageRoot,
+            new Set<string>(),
+            this.trustPolicy
+          )
+        : await this
+            .resolveLockedOfficialDependencies(
+              packageId
+            );
+
+    await this
+      .assertOfficialInstallSet(
+        packageId,
+        packages
+      );
+
+    const registry =
+      new PackageRegistry(
+        this.packageRoot
+      );
+
+    const compatibility =
+      new CompatibilityChecker();
+
+    const verifier =
+      new PackageArtifactVerifier();
+
+    const dependencyGraph =
+      new DependencyGraph();
+
+    const manifests =
+      new Map<
+        string,
+        PackageManifest
+      >();
+
+    if (!silent) {
+      console.log("");
+      console.log("Installing Packages");
+      console.log("===================");
+      console.log("");
+    }
+
+    for (const packageName of packages) {
+      const locked =
+        this.lockedOfficialPackages
+          .get(packageName);
+
+      const effectivePackageRoot =
+        locked === undefined
+          ? this.packageRoot
+          : locked.extracted
+              .stagingPath;
+
+      const manifest =
+        locked === undefined
+          ? await registry.getPackage(
+              packageName
+            )
+          : await loadVerifiedLockedOfficialRegistryManifest(
+              locked,
+              effectivePackageRoot,
+              this.projectRoot
+            );
+
+      /*
+       * Authenticate publisher authority before
+       * trusting any manifest-controlled package
+       * metadata during installation preflight.
+       */
+      this.trustPolicy.verify(
+        manifest
+      );
+
+      compatibility.check(manifest, { silent });
+
+      await verifier.verify(
+        effectivePackageRoot,
+        manifest
+      );
+
+      manifests.set(
+        manifest.id,
+        manifest
+      );
+
+      dependencyGraph.addPackage(
+        manifest.id,
+        manifest.dependencies
+          .filter(
+            (dependency) =>
+              packages.includes(
+                dependency.id
+              )
+          )
+          .map(
+            (dependency) =>
+              dependency.id
+          )
+      );
+    }
+
+    const analyzer =
+      new DependencyAnalyzer(
+        dependencyGraph
+      );
+
+    analyzer.checkCircularDependencies({ silent });
+
+    const sorter =
+      new TopologicalSorter(
+        dependencyGraph
+      );
+
+    const installationOrder =
+      sorter.sort();
+
+    const scheduler =
+      new InstallationScheduler(
+        dependencyGraph
+      );
+
+    const batches =
+      scheduler.createBatches();
+
+    return { manifests, dependencyGraph, installationOrder, batches };
   }
 
   private async resolveLockedOfficialDependencies(

@@ -222,6 +222,7 @@ test(
       ["recovery", ["plan"], "none"],
       ["generate", ["component"], "none"],
       ["template", ["install"], "none"],
+      ["package", ["install"], "none"],
     ];
 
     for (
@@ -244,10 +245,6 @@ test(
     const mutationPolicies = [
       [
         "feature",
-        ["install"],
-      ],
-      [
-        "package",
         ["install"],
       ],
       [

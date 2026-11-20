@@ -214,6 +214,21 @@ Failed commands return a non-zero process exit code so scripts and CI systems ca
 
 Aurora packages use a strict, versioned trust contract. Before installation, Aurora validates package identity, semantic-version compatibility, publisher and provenance metadata, dependencies and conflicts, requested capabilities, declared files and migrations, platform support, lifecycle state, and SHA-256 artifact integrity.
 
+To preview a bundled package install from your project directory:
+
+```sh
+aurora package install auth --dry-run
+aurora package install auth --dry-run --json
+```
+
+The preview verifies the selected manifests and artifacts and shows versions and
+dependency batches. JSON also lists declared capabilities and whether the packages
+declare installers or hooks. The preview does not grant capabilities, read or write
+installed-package state, create a cache or lock, or run package code. It cannot
+predict installer or hook file changes. Run without `--dry-run` to install; Aurora
+rechecks the package inputs and checks installed state under the lifecycle lock.
+This preview does not cover `package install-official`.
+
 See [Package Manifest v1](docs/package-manifest-v1.md) for the complete format, capability list, and digest algorithm.
 
 ## Verified publication bundles

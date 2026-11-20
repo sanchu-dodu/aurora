@@ -57,11 +57,10 @@ export class CompatibilityChecker {
   ) {}
 
   check(
-    manifest: PackageManifest
+    manifest: PackageManifest,
+    { silent = false }: { silent?: boolean } = {}
   ): void {
-    console.log(
-      `Checking compatibility for ${manifest.id}...`
-    );
+    if (!silent) console.log(`Checking compatibility for ${manifest.id}...`);
 
     if (manifest.lifecycle.revoked) {
       throw new AuroraError(
@@ -130,14 +129,12 @@ export class CompatibilityChecker {
       );
     }
 
-    if (manifest.lifecycle.deprecated) {
+    if (!silent && manifest.lifecycle.deprecated) {
       console.warn(
         `Package '${manifest.id}' is deprecated: ${manifest.lifecycle.reason ?? "No reason supplied."}`
       );
     }
 
-    console.log(
-      `Compatibility OK (${manifest.version})`
-    );
+    if (!silent) console.log(`Compatibility OK (${manifest.version})`);
   }
 }

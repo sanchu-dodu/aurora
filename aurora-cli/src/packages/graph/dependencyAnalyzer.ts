@@ -9,12 +9,10 @@ export class DependencyAnalyzer {
   ) {}
 
 
-  checkCircularDependencies(): void {
+  checkCircularDependencies({ silent = false }: { silent?: boolean } = {}): void {
 
 
-    console.log(
-      "Checking for circular dependencies..."
-    );
+    if (!silent) console.log("Checking for circular dependencies...");
 
 
     const visited =
@@ -47,9 +45,7 @@ export class DependencyAnalyzer {
     }
 
 
-    console.log(
-      "No circular dependencies detected."
-    );
+    if (!silent) console.log("No circular dependencies detected.");
 
   }
 
